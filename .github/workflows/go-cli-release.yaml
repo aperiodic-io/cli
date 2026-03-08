@@ -3,8 +3,7 @@ name: go-cli-release
 on:
   workflow_dispatch:
   release:
-    types:
-      - published
+    types: [published]
   push:
     tags:
       - 'go-cli-v*'
@@ -13,9 +12,16 @@ permissions:
   contents: write
   packages: write
 
+concurrency:
+  group: go-cli-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLI_NAME: aperiodic-cli
+
 jobs:
-  build-go-cli:
-    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+  build-archives:
+    name: build archives (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -32,48 +38,116 @@ jobs:
         with:
           go-version-file: go-cli/go.mod
 
-      - name: build-binary
+      - name: build
         working-directory: go-cli
         env:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          mkdir -p dist
+          set -euo pipefail
+          mkdir -p dist artifacts
           ext=""
           if [ "$GOOS" = "windows" ]; then
             ext=".exe"
           fi
-
-          out="aperiodic-cli-${GOOS}-${GOARCH}${ext}"
+          out="${CLI_NAME}-${GOOS}-${GOARCH}${ext}"
           go build -trimpath -ldflags "-s -w" -o "dist/${out}" .
 
-      - name: package-binary
-        working-directory: go-cli
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          mkdir -p artifacts
           if [ "$GOOS" = "windows" ]; then
-            archive="artifacts/aperiodic-cli-${GOOS}-${GOARCH}.zip"
-            (cd dist && zip -r "../${archive}" "aperiodic-cli-${GOOS}-${GOARCH}.exe")
+            archive="artifacts/${CLI_NAME}-${GOOS}-${GOARCH}.zip"
+            (cd dist && zip -r "../${archive}" "${out}")
           else
-            archive="artifacts/aperiodic-cli-${GOOS}-${GOARCH}.tar.gz"
-            tar -C dist -czf "$archive" "aperiodic-cli-${GOOS}-${GOARCH}"
+            archive="artifacts/${CLI_NAME}-${GOOS}-${GOARCH}.tar.gz"
+            tar -C dist -czf "$archive" "${out}"
           fi
-          echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
+          sha256sum "$archive" > "${archive}.sha256"
 
-      - name: upload-build-artifact
+      - name: upload-artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: go-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: archives-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            go-cli/artifacts/*
+          if-no-files-found: error
+
+  build-linux-packages:
+    name: build linux packages (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go-cli/go.mod
+
+      - name: install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: build linux binary
+        working-directory: go-cli
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist artifacts
+          out="${CLI_NAME}-linux-${GOARCH}"
+          go build -trimpath -ldflags "-s -w" -o "dist/${out}" .
+
+      - name: create nfpm config
+        working-directory: go-cli
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          clean_version="${VERSION#go-cli-v}"
+          cat > nfpm.yaml <<NFPM
+          name: ${CLI_NAME}
+          arch: ${GOARCH}
+          platform: linux
+          version: ${clean_version}
+          section: default
+          priority: optional
+          maintainer: Aperiodic <support@aperiodic.io>
+          description: Aperiodic Go CLI downloader
+          vendor: Aperiodic
+          homepage: https://github.com/${{ github.repository }}
+          license: MIT
+          contents:
+            - src: dist/${CLI_NAME}-linux-${GOARCH}
+              dst: /usr/local/bin/${CLI_NAME}
+          NFPM
+
+      - name: package deb and rpm
+        working-directory: go-cli
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          "$HOME/go/bin/nfpm" package --packager deb --config nfpm.yaml --target artifacts/${CLI_NAME}-linux-${{ matrix.goarch }}.deb
+          "$HOME/go/bin/nfpm" package --packager rpm --config nfpm.yaml --target artifacts/${CLI_NAME}-linux-${{ matrix.goarch }}.rpm
+          sha256sum artifacts/${CLI_NAME}-linux-${{ matrix.goarch }}.deb > artifacts/${CLI_NAME}-linux-${{ matrix.goarch }}.deb.sha256
+          sha256sum artifacts/${CLI_NAME}-linux-${{ matrix.goarch }}.rpm > artifacts/${CLI_NAME}-linux-${{ matrix.goarch }}.rpm.sha256
+
+      - name: upload-linux-packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-${{ matrix.goarch }}
           path: go-cli/artifacts/*
           if-no-files-found: error
 
-  publish-go-cli:
-    name: publish-go-cli-packages
-    needs: build-go-cli
+  publish-github-release:
+    name: publish GitHub Release assets
+    needs: [build-archives, build-linux-packages]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/go-cli-v')
 
@@ -85,8 +159,10 @@ jobs:
 
       - name: flatten-artifacts
         run: |
+          set -euo pipefail
           mkdir -p release-assets
-          find dist-artifacts -type f -maxdepth 3 -exec cp {} release-assets/ \;
+          find dist-artifacts -maxdepth 3 -type f -exec cp {} release-assets/ \;
+          (cd release-assets && sha256sum *.tar.gz *.zip *.deb *.rpm > checksums.txt)
           ls -lah release-assets
 
       - name: upload-to-github-release
@@ -94,20 +170,213 @@ jobs:
         with:
           files: release-assets/*
 
-      - name: upload-to-package-repository
-        if: ${{ secrets.GO_CLI_PACKAGE_REPOSITORY_URL != '' && secrets.GO_CLI_PACKAGE_REPOSITORY_TOKEN != '' }}
+      - name: upload-release-assets-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: consolidated-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish-homebrew:
+    name: publish Homebrew formula
+    needs: publish-github-release
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'release' || startsWith(github.ref, 'refs/tags/go-cli-v')) && secrets.HOMEBREW_TAP_GITHUB_TOKEN != '' && secrets.HOMEBREW_TAP_REPOSITORY != ''
+
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+
+      - name: download-release-assets
+        uses: actions/download-artifact@v4
+        with:
+          name: consolidated-release-assets
+          path: release-assets
+
+      - name: generate formula
         env:
-          PACKAGE_REPOSITORY_URL: ${{ secrets.GO_CLI_PACKAGE_REPOSITORY_URL }}
-          PACKAGE_REPOSITORY_TOKEN: ${{ secrets.GO_CLI_PACKAGE_REPOSITORY_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          for artifact in release-assets/*; do
-            name=$(basename "$artifact")
-            echo "Publishing ${name} to ${PACKAGE_REPOSITORY_URL}"
-            curl --fail --show-error --silent \
-              -X PUT \
-              -H "Authorization: Bearer ${PACKAGE_REPOSITORY_TOKEN}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@${artifact}" \
-              "${PACKAGE_REPOSITORY_URL%/}/${name}"
-          done
+          arm_file="${CLI_NAME}-darwin-arm64.tar.gz"
+          amd_file="${CLI_NAME}-darwin-amd64.tar.gz"
+          arm_sha=$(sha256sum "release-assets/${arm_file}" | awk '{print $1}')
+          amd_sha=$(sha256sum "release-assets/${amd_file}" | awk '{print $1}')
+
+          mkdir -p Formula
+          cat > Formula/${CLI_NAME}.rb <<RUBY
+          class AperiodicCli < Formula
+            desc "Aperiodic parquet downloader CLI"
+            homepage "https://github.com/${REPO}"
+            version "${TAG#go-cli-v}"
+            license "MIT"
+
+            if Hardware::CPU.arm?
+              url "https://github.com/${REPO}/releases/download/${TAG}/${arm_file}"
+              sha256 "${arm_sha}"
+            else
+              url "https://github.com/${REPO}/releases/download/${TAG}/${amd_file}"
+              sha256 "${amd_sha}"
+            end
+
+            def install
+              bin.install Dir["*"]
+            end
+          end
+          RUBY
+
+      - name: publish formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAP_REPO: ${{ secrets.HOMEBREW_TAP_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          gh repo clone "$TAP_REPO" tap-repo
+          mkdir -p tap-repo/Formula
+          cp Formula/${CLI_NAME}.rb tap-repo/Formula/${CLI_NAME}.rb
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/${CLI_NAME}.rb
+          git commit -m "chore: update ${CLI_NAME} ${GITHUB_REF_NAME#go-cli-v}" || exit 0
+          git push
+
+  publish-scoop:
+    name: publish Scoop manifest
+    needs: publish-github-release
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'release' || startsWith(github.ref, 'refs/tags/go-cli-v')) && secrets.SCOOP_BUCKET_GITHUB_TOKEN != '' && secrets.SCOOP_BUCKET_REPOSITORY != ''
+
+    steps:
+      - name: download-release-assets
+        uses: actions/download-artifact@v4
+        with:
+          name: consolidated-release-assets
+          path: release-assets
+
+      - name: generate scoop manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          amd_file="${CLI_NAME}-windows-amd64.zip"
+          arm_file="${CLI_NAME}-windows-arm64.zip"
+          amd_sha=$(sha256sum "release-assets/${amd_file}" | awk '{print $1}')
+          arm_sha=$(sha256sum "release-assets/${arm_file}" | awk '{print $1}')
+
+          cat > ${CLI_NAME}.json <<JSON
+          {
+            "version": "${TAG#go-cli-v}",
+            "description": "Aperiodic parquet downloader CLI",
+            "homepage": "https://github.com/${REPO}",
+            "license": "MIT",
+            "architecture": {
+              "64bit": {
+                "url": "https://github.com/${REPO}/releases/download/${TAG}/${amd_file}",
+                "hash": "${amd_sha}"
+              },
+              "arm64": {
+                "url": "https://github.com/${REPO}/releases/download/${TAG}/${arm_file}",
+                "hash": "${arm_sha}"
+              }
+            },
+            "bin": "${CLI_NAME}-windows-amd64.exe"
+          }
+          JSON
+
+      - name: publish manifest
+        env:
+          GH_TOKEN: ${{ secrets.SCOOP_BUCKET_GITHUB_TOKEN }}
+          BUCKET_REPO: ${{ secrets.SCOOP_BUCKET_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          gh repo clone "$BUCKET_REPO" scoop-bucket
+          mkdir -p scoop-bucket/bucket
+          cp ${CLI_NAME}.json scoop-bucket/bucket/${CLI_NAME}.json
+          cd scoop-bucket
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/${CLI_NAME}.json
+          git commit -m "chore: update ${CLI_NAME} ${GITHUB_REF_NAME#go-cli-v}" || exit 0
+          git push
+
+  publish-winget:
+    name: publish Winget manifest
+    needs: publish-github-release
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'release' || startsWith(github.ref, 'refs/tags/go-cli-v')) && secrets.WINGET_GITHUB_TOKEN != '' && secrets.WINGET_IDENTIFIER != ''
+
+    steps:
+      - name: download-release-assets
+        uses: actions/download-artifact@v4
+        with:
+          name: consolidated-release-assets
+          path: release-assets
+
+      - name: prepare manifest files
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          IDENTIFIER: ${{ secrets.WINGET_IDENTIFIER }}
+        run: |
+          set -euo pipefail
+          version="${TAG#go-cli-v}"
+          installer_file="${CLI_NAME}-windows-amd64.zip"
+          sha=$(sha256sum "release-assets/${installer_file}" | awk '{print $1}')
+          url="https://github.com/${REPO}/releases/download/${TAG}/${installer_file}"
+
+          root="winget-manifests/${IDENTIFIER}/${version}"
+          mkdir -p "$root"
+
+          cat > "$root/${IDENTIFIER}.installer.yaml" <<YAML
+          PackageIdentifier: ${IDENTIFIER}
+          PackageVersion: ${version}
+          Installers:
+            - Architecture: x64
+              InstallerType: zip
+              NestedInstallerType: portable
+              NestedInstallerFiles:
+                - RelativeFilePath: ${CLI_NAME}-windows-amd64.exe
+                  PortableCommandAlias: ${CLI_NAME}
+              InstallerUrl: ${url}
+              InstallerSha256: ${sha}
+          ManifestType: installer
+          ManifestVersion: 1.6.0
+          YAML
+
+          cat > "$root/${IDENTIFIER}.locale.en-US.yaml" <<YAML
+          PackageIdentifier: ${IDENTIFIER}
+          PackageVersion: ${version}
+          PackageLocale: en-US
+          Publisher: Aperiodic
+          PackageName: Aperiodic CLI
+          License: MIT
+          ShortDescription: Aperiodic parquet downloader CLI
+          ManifestType: defaultLocale
+          ManifestVersion: 1.6.0
+          YAML
+
+          cat > "$root/${IDENTIFIER}.yaml" <<YAML
+          PackageIdentifier: ${IDENTIFIER}
+          PackageVersion: ${version}
+          ManifestType: version
+          ManifestVersion: 1.6.0
+          YAML
+
+      - name: submit winget PR
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh repo fork microsoft/winget-pkgs --clone=true --remote=true
+          cp -R winget-manifests/* winget-pkgs/manifests/
+          cd winget-pkgs
+          git checkout -b "${CLI_NAME}-${GITHUB_REF_NAME#go-cli-v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifests
+          git commit -m "Add ${CLI_NAME} ${GITHUB_REF_NAME#go-cli-v}" || exit 0
+          git push --set-upstream origin "${CLI_NAME}-${GITHUB_REF_NAME#go-cli-v}"
+          gh pr create --repo microsoft/winget-pkgs --title "Add ${CLI_NAME} ${GITHUB_REF_NAME#go-cli-v}" --body "Automated Winget manifest update for ${GITHUB_REF_NAME}."

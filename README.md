@@ -1,6 +1,6 @@
 ## Go CLI downloader
 
-This repo also includes a Go CLI that downloads the raw monthly parquet files returned by the same API used by the Python client.
+This repo includes a Go CLI that downloads the raw monthly parquet files returned by the same API used by the Python client.
 
 ```bash
 cd go-cli
@@ -20,7 +20,21 @@ It fetches `/data/{bucket}` pre-signed URLs, then downloads each file concurrent
 
 ### Go CLI release automation
 
-GitHub Actions now builds Go CLI binaries for Linux, macOS, and Windows (`amd64` + `arm64`) on tagged/release builds, uploads them to the GitHub Release, and can also push them to an external package repository when these secrets are set:
+The `go-cli-release` GitHub Actions workflow now publishes:
 
-- `GO_CLI_PACKAGE_REPOSITORY_URL`
-- `GO_CLI_PACKAGE_REPOSITORY_TOKEN`
+- GitHub Release assets (`.tar.gz`, `.zip`, `checksums.txt`)
+- Linux package assets (`.deb` and `.rpm`)
+- Homebrew formula updates
+- Scoop bucket manifest updates
+- Winget manifest PRs
+
+Publish jobs are enabled when the associated secrets are configured:
+
+- `HOMEBREW_TAP_GITHUB_TOKEN`
+- `HOMEBREW_TAP_REPOSITORY` (for example `your-org/homebrew-tap`)
+- `SCOOP_BUCKET_GITHUB_TOKEN`
+- `SCOOP_BUCKET_REPOSITORY` (for example `your-org/scoop-bucket`)
+- `WINGET_GITHUB_TOKEN`
+- `WINGET_IDENTIFIER` (for example `Aperiodic.AperiodicCLI`)
+
+Trigger with a tag named `go-cli-v*` or a published GitHub release.
