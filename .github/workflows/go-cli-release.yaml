@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLI_NAME: aperiodic-cli
+  CLI_NAME: aperiodic
 
 jobs:
   build-archives:
@@ -206,7 +206,7 @@ jobs:
 
           mkdir -p Formula
           cat > Formula/${CLI_NAME}.rb <<RUBY
-          class AperiodicCli < Formula
+          class Aperiodic < Formula
             desc "Aperiodic parquet downloader CLI"
             homepage "https://github.com/${REPO}"
             version "${TAG#go-cli-v}"
@@ -351,7 +351,7 @@ jobs:
           PackageVersion: ${version}
           PackageLocale: en-US
           Publisher: Aperiodic
-          PackageName: Aperiodic CLI
+          PackageName: Aperiodic
           License: MIT
           ShortDescription: Aperiodic parquet downloader CLI
           ManifestType: defaultLocale

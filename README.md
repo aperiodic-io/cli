@@ -28,6 +28,8 @@ The `go-cli-release` GitHub Actions workflow now publishes:
 - Scoop bucket manifest updates
 - Winget manifest PRs
 
+Package-manager manifests/formulas expose the binary as `aperiodic`.
+
 Publish jobs are enabled when the associated secrets are configured:
 
 - `HOMEBREW_TAP_GITHUB_TOKEN`
