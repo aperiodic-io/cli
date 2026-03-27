@@ -1,13 +1,9 @@
 package main
 
 import (
-	"encoding/csv"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"sort"
-	"time"
 )
 
 var (
@@ -17,10 +13,10 @@ var (
 	intervalFlag       *string
 	startDateFlag      *string
 	endDateFlag        *string
-	formatFlag         *string
 	maxConcurrentFlag  *int
 	timestampFlag      *string
 	metricFlag         *string
+	outputDirFlag      *string
 )
 
 func init() {
@@ -30,10 +26,10 @@ func init() {
 	intervalFlag = flag.String("interval", "1h", "Aggregation interval")
 	startDateFlag = flag.String("start-date", "", "Start date (YYYY-MM-DD)")
 	endDateFlag = flag.String("end-date", "", "End date (YYYY-MM-DD)")
-	formatFlag = flag.String("format", "csv", "Output format (csv, json)")
 	maxConcurrentFlag = flag.Int("max-concurrent", 10, "Maximum concurrent downloads")
 	timestampFlag = flag.String("timestamp", "exchange", "Timestamp source (exchange, true)")
 	metricFlag = flag.String("metric", "", "Specific metric to fetch")
+	outputDirFlag = flag.String("output-dir", "", "Output directory for Parquet files (mandatory)")
 }
 
 func main() {
@@ -66,7 +62,11 @@ func main() {
 	case "symbols":
 		handleSymbols(client, *exchangeFlag)
 	case "ohlcv", "vwap", "twap", "metrics", "derivative":
-		handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *formatFlag, *metricFlag)
+		if *outputDirFlag == "" {
+			fmt.Fprintln(os.Stderr, "Error: --output-dir is mandatory for this command")
+			os.Exit(1)
+		}
+		handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *metricFlag, *outputDirFlag)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		printUsage()
@@ -80,11 +80,11 @@ func printUsage() {
 	fmt.Println("  aperiodic <command> [flags]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  symbols     List available symbols for an exchange")
-	fmt.Println("  ohlcv       Fetch OHLCV data")
-	fmt.Println("  vwap        Fetch VWAP data")
-	fmt.Println("  twap        Fetch TWAP data")
-	fmt.Println("  metrics     Fetch trade/L1/L2 metrics (use --metric flag for specific metric)")
-	fmt.Println("  derivative  Fetch derivative metrics (use --metric flag for specific metric)")
+	fmt.Println("  ohlcv       Download OHLCV data")
+	fmt.Println("  vwap        Download VWAP data")
+	fmt.Println("  twap        Download TWAP data")
+	fmt.Println("  metrics     Download trade/L1/L2 metrics (use --metric flag for specific metric)")
+	fmt.Println("  derivative  Download trade/L1/L2 metrics (use --metric flag for specific metric)")
 	fmt.Println("  help        Show this help")
 	fmt.Println("\nFlags:")
 	flag.PrintDefaults()
@@ -102,24 +102,13 @@ func handleSymbols(client *AperiodicClient, exchange string) {
 	}
 }
 
-func handleData(client *AperiodicClient, cmd, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, format, metric string) {
+func handleData(client *AperiodicClient, cmd, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, metric, outputDir string) {
 	if symbol == "" {
 		fmt.Fprintln(os.Stderr, "Error: --symbol is required")
 		os.Exit(1)
 	}
 	if startDate == "" || endDate == "" {
 		fmt.Fprintln(os.Stderr, "Error: --start-date and --end-date are required")
-		os.Exit(1)
-	}
-
-	start, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing start-date: %v\n", err)
-		os.Exit(1)
-	}
-	end, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing end-date: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -143,48 +132,16 @@ func handleData(client *AperiodicClient, cmd, timestamp, interval, exchange, sym
 		return
 	}
 
-	downloaded, err := client.DownloadFilesConcurrently(resp.Files, maxConcurrent)
+	fmt.Printf("Downloading %d Parquet files to %s...\n", len(resp.Files), outputDir)
+
+	results, err := client.DownloadFilesConcurrently(resp.Files, maxConcurrent, outputDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error downloading files: %v\n", err)
 		os.Exit(1)
 	}
 
-	rows, err := ProcessParquetFiles(downloaded, start, end)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error processing files: %v\n", err)
-		os.Exit(1)
-	}
-
-	outputResults(rows, format)
-}
-
-func outputResults(rows []map[string]interface{}, format string) {
-	if len(rows) == 0 {
-		return
-	}
-
-	if format == "json" {
-		json.NewEncoder(os.Stdout).Encode(rows)
-		return
-	}
-
-	// Default to CSV
-	w := csv.NewWriter(os.Stdout)
-	defer w.Flush()
-
-	// Header
-	var keys []string
-	for k := range rows[0] {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	w.Write(keys)
-
-	for _, row := range rows {
-		line := make([]string, len(keys))
-		for i, k := range keys {
-			line[i] = fmt.Sprintf("%v", row[k])
-		}
-		w.Write(line)
+	fmt.Printf("Successfully downloaded %d files:\n", len(results))
+	for _, res := range results {
+		fmt.Printf(" - %s\n", res.Filename)
 	}
 }

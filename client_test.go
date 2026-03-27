@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -121,7 +122,7 @@ func TestFetchPresignedUrls(t *testing.T) {
 	}
 }
 
-func TestDownloadWithRetry(t *testing.T) {
+func TestDownloadToFile(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
@@ -135,11 +136,13 @@ func TestDownloadWithRetry(t *testing.T) {
 	defer server.Close()
 
 	client := NewAperiodicClient("test-key")
-	data, err := client.downloadWithRetry(server.URL, 2)
+	tmpFile := filepath.Join(t.TempDir(), "test.data")
+	err := client.downloadToFile(server.URL, tmpFile, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	data, _ := os.ReadFile(tmpFile)
 	if string(data) != "data" {
 		t.Errorf("expected data, got %s", string(data))
 	}
