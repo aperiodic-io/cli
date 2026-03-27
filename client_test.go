@@ -12,7 +12,7 @@ import (
 
 func TestNewAperiodicClient(t *testing.T) {
 	apiKey := "test-key"
-	os.Setenv("APERIODIC_API_URL", "http://example.com")
+	os.Setenv("APERIODIC_API_URL", "https://aperiodic.io")
 	defer os.Unsetenv("APERIODIC_API_URL")
 
 	client := NewAperiodicClient(apiKey)
@@ -20,8 +20,8 @@ func TestNewAperiodicClient(t *testing.T) {
 	if client.APIKey != apiKey {
 		t.Errorf("expected APIKey %s, got %s", apiKey, client.APIKey)
 	}
-	if client.BaseURL != "http://example.com" {
-		t.Errorf("expected BaseURL http://example.com, got %s", client.BaseURL)
+	if client.BaseURL != "https://aperiodic.io" {
+		t.Errorf("expected BaseURL https://aperiodic.io, got %s", client.BaseURL)
 	}
 }
 
