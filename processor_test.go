@@ -1,4 +1,4 @@
-package main
+package aperiodic
 
 import (
 	"fmt"
@@ -10,10 +10,7 @@ import (
 )
 
 func TestDownloadFilesConcurrently(t *testing.T) {
-	apiKey := os.Getenv("APERIODIC_API_KEY")
-	if apiKey == "" {
-		t.Fatal("APERIODIC_API_KEY environment variable not set")
-	}
+	apiKey := checkAPIKey(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -24,11 +21,7 @@ func TestDownloadFilesConcurrently(t *testing.T) {
 	client := NewAperiodicClient(apiKey)
 	client.BaseURL = server.URL
 
-	outputDir, err := os.MkdirTemp("", "aperiodic-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(outputDir)
+	outputDir := t.TempDir()
 
 	files := []FileInfo{
 		{Year: 2024, Month: 1, URL: server.URL},

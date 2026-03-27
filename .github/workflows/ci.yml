@@ -23,7 +23,7 @@ jobs:
         go-version: '1.24'
     - name: Test
       env:
-        APERIODIC_API_KEY: test
+        APERIODIC_API_KEY: ${{ secrets.APERIODIC_API_KEY }}
       run: go test -v ./...
 
   build:
@@ -47,7 +47,7 @@ jobs:
         BINARY_NAME=aperiodic
         if [ "$GOOS" = "windows" ]; then BINARY_NAME=aperiodic.exe; fi
         mkdir -p dist
-        GOARCH=$GOARCH GOOS=$GOOS go build -o dist/aperiodic-$GOOS-$GOARCH${BINARY_NAME#aperiodic} .
+        GOARCH=$GOARCH GOOS=$GOOS go build -o dist/aperiodic-$GOOS-$GOARCH${BINARY_NAME#aperiodic} ./cmd/aperiodic
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:

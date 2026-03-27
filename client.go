@@ -1,4 +1,4 @@
-package main
+package aperiodic
 
 import (
 	"encoding/json"
@@ -26,8 +26,8 @@ func (e *APIError) Error() string {
 }
 
 type AperiodicClient struct {
-	APIKey   string
-	BaseURL  string
+	APIKey     string
+	BaseURL    string
 	HTTPClient *http.Client
 }
 

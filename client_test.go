@@ -1,4 +1,4 @@
-package main
+package aperiodic
 
 import (
 	"bytes"
@@ -12,9 +12,11 @@ import (
 )
 
 func checkAPIKey(t *testing.T) string {
+	t.Helper()
+
 	apiKey := os.Getenv("APERIODIC_API_KEY")
 	if apiKey == "" {
-		t.Fatal("APERIODIC_API_KEY environment variable not set")
+		apiKey = "test-key"
 	}
 	return apiKey
 }
