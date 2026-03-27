@@ -22,6 +22,8 @@ jobs:
       with:
         go-version: '1.24'
     - name: Test
+      env:
+        APERIODIC_API_KEY: test
       run: go test -v ./...
 
   build:
