@@ -77,7 +77,7 @@ func TestGetSymbols(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"symbols": ["BTC-USDT", "ETH-USDT"], "exchange": "binance", "bucket": "symbols"}`))
+		w.Write([]byte(`{"symbols": ["perpetual-BTC-USDT:USDT", "ETH-USDT"], "exchange": "binance", "bucket": "symbols"}`))
 	}))
 	defer server.Close()
 
@@ -89,7 +89,7 @@ func TestGetSymbols(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(symbols) != 2 || symbols[0] != "BTC-USDT" {
+	if len(symbols) != 2 || symbols[0] != "perpetual-BTC-USDT:USDT" {
 		t.Errorf("unexpected symbols: %v", symbols)
 	}
 }
@@ -111,7 +111,7 @@ func TestFetchPresignedUrls(t *testing.T) {
 	client := NewAperiodicClient("test-key")
 	client.BaseURL = server.URL
 
-	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "BTC-USDT", "2024-01-01", "2024-01-31")
+	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-01-31")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
