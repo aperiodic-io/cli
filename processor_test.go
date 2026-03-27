@@ -10,13 +10,18 @@ import (
 )
 
 func TestDownloadFilesConcurrently(t *testing.T) {
+	apiKey := os.Getenv("APERIODIC_API_KEY")
+	if apiKey == "" {
+		t.Fatal("APERIODIC_API_KEY environment variable not set")
+	}
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("parquet-content"))
 	}))
 	defer server.Close()
 
-	client := NewAperiodicClient("test-key")
+	client := NewAperiodicClient(apiKey)
 	client.BaseURL = server.URL
 
 	outputDir, err := os.MkdirTemp("", "aperiodic-test-*")

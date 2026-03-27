@@ -11,6 +11,14 @@ import (
 	"testing"
 )
 
+func checkAPIKey(t *testing.T) string {
+	apiKey := os.Getenv("APERIODIC_API_KEY")
+	if apiKey == "" {
+		t.Fatal("APERIODIC_API_KEY environment variable not set")
+	}
+	return apiKey
+}
+
 func TestNewAperiodicClient(t *testing.T) {
 	apiKey := "test-key"
 	os.Setenv("APERIODIC_API_URL", "https://aperiodic.io")
@@ -72,8 +80,9 @@ func TestHandleAPIError(t *testing.T) {
 }
 
 func TestGetSymbols(t *testing.T) {
+	apiKey := checkAPIKey(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-KEY") != "test-key" {
+		if r.Header.Get("X-API-KEY") != apiKey {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -82,7 +91,7 @@ func TestGetSymbols(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAperiodicClient("test-key")
+	client := NewAperiodicClient(apiKey)
 	client.BaseURL = server.URL
 
 	symbols, err := client.GetSymbols("binance")
@@ -95,8 +104,34 @@ func TestGetSymbols(t *testing.T) {
 	}
 }
 
-func TestFetchPresignedUrls(t *testing.T) {
+func TestGetSymbols_Unauthorized(t *testing.T) {
+	checkAPIKey(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client := NewAperiodicClient("wrong-key")
+	client.BaseURL = server.URL
+
+	_, err := client.GetSymbols("binance")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok || apiErr.StatusCode != 401 {
+		t.Errorf("expected 401 APIError, got %v", err)
+	}
+}
+
+func TestFetchPresignedUrls(t *testing.T) {
+	apiKey := checkAPIKey(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-KEY") != apiKey {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if r.URL.Path != "/data/ohlcv" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
@@ -109,7 +144,7 @@ func TestFetchPresignedUrls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAperiodicClient("test-key")
+	client := NewAperiodicClient(apiKey)
 	client.BaseURL = server.URL
 
 	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-01-31")
@@ -123,6 +158,7 @@ func TestFetchPresignedUrls(t *testing.T) {
 }
 
 func TestDownloadToFile(t *testing.T) {
+	checkAPIKey(t)
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
