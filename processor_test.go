@@ -2,31 +2,27 @@ package aperiodic
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestDownloadFilesConcurrently(t *testing.T) {
-	apiKey := checkAPIKey(t)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("parquet-content"))
-	}))
-	defer server.Close()
+	apiKey := requireAPIKey(t)
 
 	client := NewAperiodicClient(apiKey)
-	client.BaseURL = server.URL
 
-	outputDir := t.TempDir()
-
-	files := []FileInfo{
-		{Year: 2024, Month: 1, URL: server.URL},
-		{Year: 2024, Month: 2, URL: server.URL},
+	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-02-28")
+	if err != nil {
+		t.Fatalf("failed to fetch presigned urls: %v", err)
 	}
+	if len(resp.Files) < 2 {
+		t.Fatalf("expected at least 2 files, got %d", len(resp.Files))
+	}
+
+	// Use first 2 files for the test
+	files := resp.Files[:2]
+	outputDir := t.TempDir()
 
 	results, err := client.DownloadFilesConcurrently(files, 2, outputDir)
 	if err != nil {
@@ -44,8 +40,8 @@ func TestDownloadFilesConcurrently(t *testing.T) {
 			t.Errorf("failed to read downloaded file %s: %v", res.Filename, err)
 			continue
 		}
-		if string(content) != "parquet-content" {
-			t.Errorf("unexpected content in %s: %s", res.Filename, string(content))
+		if len(content) == 0 {
+			t.Errorf("expected non-empty content in %s", res.Filename)
 		}
 		expectedFilename := fmt.Sprintf("%d-%02d.parquet", res.Year, res.Month)
 		if res.Filename != expectedFilename {

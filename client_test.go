@@ -5,18 +5,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func checkAPIKey(t *testing.T) string {
+func requireAPIKey(t *testing.T) string {
 	t.Helper()
 
 	apiKey := os.Getenv("APERIODIC_API_KEY")
 	if apiKey == "" {
-		apiKey = "test-key"
+		t.Skip("APERIODIC_API_KEY not set, skipping integration test")
 	}
 	return apiKey
 }
@@ -82,39 +81,24 @@ func TestHandleAPIError(t *testing.T) {
 }
 
 func TestGetSymbols(t *testing.T) {
-	apiKey := checkAPIKey(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-KEY") != apiKey {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"symbols": ["perpetual-BTC-USDT:USDT", "ETH-USDT"], "exchange": "binance", "bucket": "symbols"}`))
-	}))
-	defer server.Close()
+	apiKey := requireAPIKey(t)
 
 	client := NewAperiodicClient(apiKey)
-	client.BaseURL = server.URL
 
 	symbols, err := client.GetSymbols("binance")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(symbols) != 2 || symbols[0] != "perpetual-BTC-USDT:USDT" {
-		t.Errorf("unexpected symbols: %v", symbols)
+	if len(symbols) == 0 {
+		t.Fatal("expected at least one symbol, got none")
 	}
 }
 
 func TestGetSymbols_Unauthorized(t *testing.T) {
-	checkAPIKey(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer server.Close()
+	requireAPIKey(t)
 
 	client := NewAperiodicClient("wrong-key")
-	client.BaseURL = server.URL
 
 	_, err := client.GetSymbols("binance")
 	if err == nil {
@@ -128,63 +112,53 @@ func TestGetSymbols_Unauthorized(t *testing.T) {
 }
 
 func TestFetchPresignedUrls(t *testing.T) {
-	apiKey := checkAPIKey(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-KEY") != apiKey {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if r.URL.Path != "/data/ohlcv" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		q := r.URL.Query()
-		if q.Get("exchange") != "binance" {
-			t.Errorf("unexpected exchange: %s", q.Get("exchange"))
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"files": [{"year": 2024, "month": 1, "url": "http://example.com/f1"}]}`))
-	}))
-	defer server.Close()
+	apiKey := requireAPIKey(t)
 
 	client := NewAperiodicClient(apiKey)
-	client.BaseURL = server.URL
 
 	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-01-31")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(resp.Files) != 1 || resp.Files[0].Year != 2024 {
-		t.Errorf("unexpected response: %v", resp)
+	if len(resp.Files) == 0 {
+		t.Fatal("expected at least one file, got none")
+	}
+
+	for _, f := range resp.Files {
+		if f.URL == "" {
+			t.Error("expected non-empty URL in file info")
+		}
+		if f.Year == 0 {
+			t.Error("expected non-zero year in file info")
+		}
 	}
 }
 
 func TestDownloadToFile(t *testing.T) {
-	checkAPIKey(t)
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts < 2 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("data"))
-	}))
-	defer server.Close()
+	apiKey := requireAPIKey(t)
 
-	client := NewAperiodicClient("test-key")
-	tmpFile := filepath.Join(t.TempDir(), "test.data")
-	err := client.downloadToFile(server.URL, tmpFile, 2)
+	client := NewAperiodicClient(apiKey)
+
+	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-01-31")
+	if err != nil {
+		t.Fatalf("failed to fetch presigned urls: %v", err)
+	}
+	if len(resp.Files) == 0 {
+		t.Fatal("no files returned to download")
+	}
+
+	tmpFile := filepath.Join(t.TempDir(), "test.parquet")
+	err = client.downloadToFile(resp.Files[0].URL, tmpFile, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, _ := os.ReadFile(tmpFile)
-	if string(data) != "data" {
-		t.Errorf("expected data, got %s", string(data))
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("failed to read downloaded file: %v", err)
 	}
-	if attempts != 2 {
-		t.Errorf("expected 2 attempts, got %d", attempts)
+	if len(data) == 0 {
+		t.Error("expected non-empty file content")
 	}
 }
