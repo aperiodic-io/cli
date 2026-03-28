@@ -15,7 +15,7 @@ func TestCLI_VWAP_Download(t *testing.T) {
 	stdout, stderr, code := runCLI(
 		"vwap",
 		"-exchange", "binance-futures",
-		"-symbol", "perpetual-BTC-USDT:USDT",
+		"-symbol", "perpetual-ETH-USDT:USDT",
 		"-interval", "1d",
 		"-start-date", "2024-01-01",
 		"-end-date", "2024-01-31",
