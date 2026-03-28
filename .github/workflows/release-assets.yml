@@ -1,41 +1,26 @@
-name: CI
+name: Upload Release Assets
 
 on:
-  push:
-    branches: [ main ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main ]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and upload assets for (e.g. v1.0.0)'
+        required: true
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24'
-    - name: Test
-      env:
-        APERIODIC_API_KEY: ${{ secrets.APERIODIC_API_KEY }}
-      run: go test -v ./...
-
   build:
-    name: Build
+    name: Build (${{ matrix.os }}/${{ matrix.arch }})
     runs-on: ubuntu-latest
-    needs: test
     strategy:
       matrix:
         os: [linux, darwin, windows]
         arch: [amd64, arm64]
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag || github.event.release.tag_name }}
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -54,11 +39,10 @@ jobs:
         name: aperiodic-${{ matrix.os }}-${{ matrix.arch }}
         path: dist/
 
-  release:
-    name: Release
+  upload:
+    name: Upload to Release
     runs-on: ubuntu-latest
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -70,9 +54,10 @@ jobs:
       run: |
         mkdir -p release
         cp artifacts/aperiodic-*/* release/
-    - name: Create Release
+    - name: Upload assets to release
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ inputs.tag || github.event.release.tag_name }}
         files: release/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
