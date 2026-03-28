@@ -36,7 +36,6 @@ func (c *CLI) Run(args []string) int {
 	fs := flag.NewFlagSet("aperiodic", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	apiKeyFlag := fs.String("api-key", "", "Aperiodic API key")
 	exchangeFlag := fs.String("exchange", "binance-futures", "Exchange name")
 	symbolFlag := fs.String("symbol", "", "Trading pair symbol")
 	intervalFlag := fs.String("interval", "1h", "Aggregation interval")
@@ -52,12 +51,8 @@ func (c *CLI) Run(args []string) int {
 	}
 
 	apiKey := c.Env("APERIODIC_API_KEY")
-	if *apiKeyFlag != "" {
-		apiKey = *apiKeyFlag
-	}
-
 	if apiKey == "" {
-		fmt.Fprintln(c.Stderr, "Error: API key is required (via --api-key or APERIODIC_API_KEY)")
+		fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set")
 		return 1
 	}
 
@@ -94,9 +89,10 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "  derivative  Download trade/L1/L2 metrics (use --metric flag for specific metric)")
 	fmt.Fprintln(c.Stdout, "  help        Show this help")
 	fmt.Fprintln(c.Stdout)
+	fmt.Fprintln(c.Stdout, "Environment:")
+	fmt.Fprintln(c.Stdout, "  APERIODIC_API_KEY  Aperiodic API key (required)")
+	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Flags:")
-	fmt.Fprintln(c.Stdout, "  -api-key string")
-	fmt.Fprintln(c.Stdout, "        Aperiodic API key")
 	fmt.Fprintln(c.Stdout, "  -end-date string")
 	fmt.Fprintln(c.Stdout, "        End date (YYYY-MM-DD)")
 	fmt.Fprintln(c.Stdout, "  -exchange string")

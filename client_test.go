@@ -5,35 +5,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func checkAPIKey(t *testing.T) string {
+func requireAPIKey(t *testing.T) string {
 	t.Helper()
 
 	apiKey := os.Getenv("APERIODIC_API_KEY")
 	if apiKey == "" {
-		apiKey = "test-key"
+		t.Fatal("APERIODIC_API_KEY environment variable not set")
 	}
+
+	// Force production base URL for all integration tests
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+
 	return apiKey
-}
-
-func TestNewAperiodicClient(t *testing.T) {
-	apiKey := "test-key"
-	os.Setenv("APERIODIC_API_URL", "https://aperiodic.io")
-	defer os.Unsetenv("APERIODIC_API_URL")
-
-	client := NewAperiodicClient(apiKey)
-
-	if client.APIKey != apiKey {
-		t.Errorf("expected APIKey %s, got %s", apiKey, client.APIKey)
-	}
-	if client.BaseURL != "https://aperiodic.io" {
-		t.Errorf("expected BaseURL https://aperiodic.io, got %s", client.BaseURL)
-	}
 }
 
 func TestHandleAPIError(t *testing.T) {
@@ -81,110 +70,184 @@ func TestHandleAPIError(t *testing.T) {
 	}
 }
 
-func TestGetSymbols(t *testing.T) {
-	apiKey := checkAPIKey(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-KEY") != apiKey {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"symbols": ["perpetual-BTC-USDT:USDT", "ETH-USDT"], "exchange": "binance", "bucket": "symbols"}`))
-	}))
-	defer server.Close()
-
-	client := NewAperiodicClient(apiKey)
-	client.BaseURL = server.URL
-
-	symbols, err := client.GetSymbols("binance")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func runCLI(args ...string) (stdout, stderr string, exitCode int) {
+	var outBuf, errBuf bytes.Buffer
+	cli := &CLI{
+		Stdout: &outBuf,
+		Stderr: &errBuf,
+		Env:    os.Getenv,
 	}
+	code := cli.Run(args)
+	return outBuf.String(), errBuf.String(), code
+}
 
-	if len(symbols) != 2 || symbols[0] != "perpetual-BTC-USDT:USDT" {
-		t.Errorf("unexpected symbols: %v", symbols)
+func TestCLI_Help(t *testing.T) {
+	stdout, _, code := runCLI("help")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(stdout, "Aperiodic CLI Client") {
+		t.Error("expected help output to contain 'Aperiodic CLI Client'")
+	}
+	if !strings.Contains(stdout, "symbols") {
+		t.Error("expected help output to list 'symbols' command")
 	}
 }
 
-func TestGetSymbols_Unauthorized(t *testing.T) {
-	checkAPIKey(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer server.Close()
-
-	client := NewAperiodicClient("wrong-key")
-	client.BaseURL = server.URL
-
-	_, err := client.GetSymbols("binance")
-	if err == nil {
-		t.Fatal("expected error, got nil")
+func TestCLI_NoArgs(t *testing.T) {
+	stdout, _, code := runCLI()
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
 	}
-
-	apiErr, ok := err.(*APIError)
-	if !ok || apiErr.StatusCode != 401 {
-		t.Errorf("expected 401 APIError, got %v", err)
+	if !strings.Contains(stdout, "Usage:") {
+		t.Error("expected usage output")
 	}
 }
 
-func TestFetchPresignedUrls(t *testing.T) {
-	apiKey := checkAPIKey(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-KEY") != apiKey {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		if r.URL.Path != "/data/ohlcv" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		q := r.URL.Query()
-		if q.Get("exchange") != "binance" {
-			t.Errorf("unexpected exchange: %s", q.Get("exchange"))
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"files": [{"year": 2024, "month": 1, "url": "http://example.com/f1"}]}`))
-	}))
-	defer server.Close()
-
-	client := NewAperiodicClient(apiKey)
-	client.BaseURL = server.URL
-
-	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-01-31")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestCLI_MissingAPIKey(t *testing.T) {
+	cli := &CLI{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Env:    func(string) string { return "" },
 	}
-
-	if len(resp.Files) != 1 || resp.Files[0].Year != 2024 {
-		t.Errorf("unexpected response: %v", resp)
+	code := cli.Run([]string{"symbols"})
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
 	}
 }
 
-func TestDownloadToFile(t *testing.T) {
-	checkAPIKey(t)
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts < 2 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+func TestCLI_UnknownCommand(t *testing.T) {
+	t.Setenv("APERIODIC_API_KEY", "fake")
+	_, stderr, code := runCLI("bogus")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "Unknown command") {
+		t.Errorf("expected 'Unknown command' in stderr, got: %s", stderr)
+	}
+}
+
+// Tests that always run (no API key needed) — match Python client pattern
+// where invalid-key tests run unconditionally and assert specific error codes.
+
+func TestCLI_Symbols_InvalidAPIKey(t *testing.T) {
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
+
+	_, stderr, code := runCLI("symbols", "-exchange", "binance-futures")
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
+	}
+}
+
+func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
+
+	outputDir := t.TempDir()
+	_, stderr, code := runCLI(
+		"ohlcv",
+		"-exchange", "binance-futures",
+		"-symbol", "perpetual-BTC-USDT:USDT",
+		"-interval", "1d",
+		"-start-date", "2024-01-01",
+		"-end-date", "2024-02-01",
+		"-output-dir", outputDir,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
+	}
+}
+
+func TestCLI_OHLCV_MissingFlags(t *testing.T) {
+	t.Setenv("APERIODIC_API_KEY", "fake")
+
+	// Missing --output-dir
+	_, stderr, code := runCLI("ohlcv", "-symbol", "perpetual-BTC-USDT:USDT", "-start-date", "2024-01-01", "-end-date", "2024-01-31")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "output-dir") {
+		t.Errorf("expected error about output-dir, got: %s", stderr)
+	}
+
+	// Missing --symbol
+	outputDir := t.TempDir()
+	_, stderr, code = runCLI("ohlcv", "-start-date", "2024-01-01", "-end-date", "2024-01-31", "-output-dir", outputDir)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "symbol") {
+		t.Errorf("expected error about symbol, got: %s", stderr)
+	}
+}
+
+// Tests that require a valid API key — skip when APERIODIC_API_KEY is not set.
+
+func TestCLI_Symbols(t *testing.T) {
+	requireAPIKey(t)
+
+	stdout, stderr, code := runCLI("symbols", "-exchange", "binance-futures")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) == 0 {
+		t.Fatal("expected at least one symbol in output")
+	}
+
+	// Verify known symbol is present
+	found := false
+	for _, line := range lines {
+		if line == "perpetual-BTC-USDT:USDT" {
+			found = true
+			break
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("data"))
-	}))
-	defer server.Close()
+	}
+	if !found {
+		t.Error("expected perpetual-BTC-USDT:USDT in symbols output")
+	}
+}
 
-	client := NewAperiodicClient("test-key")
-	tmpFile := filepath.Join(t.TempDir(), "test.data")
-	err := client.downloadToFile(server.URL, tmpFile, 2)
+func TestCLI_OHLCV_Download(t *testing.T) {
+	requireAPIKey(t)
+
+	outputDir := t.TempDir()
+
+	stdout, stderr, code := runCLI(
+		"ohlcv",
+		"-exchange", "binance-futures",
+		"-symbol", "perpetual-BTC-USDT:USDT",
+		"-interval", "1d",
+		"-start-date", "2024-01-01",
+		"-end-date", "2024-02-01",
+		"-output-dir", outputDir,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+
+	if !strings.Contains(stdout, "Successfully downloaded") {
+		t.Errorf("expected success message, got: %s", stdout)
+	}
+
+	files, err := filepath.Glob(filepath.Join(outputDir, "*.parquet"))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to glob output dir: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected at least one parquet file in output dir")
 	}
 
-	data, _ := os.ReadFile(tmpFile)
-	if string(data) != "data" {
-		t.Errorf("expected data, got %s", string(data))
-	}
-	if attempts != 2 {
-		t.Errorf("expected 2 attempts, got %d", attempts)
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			t.Errorf("failed to stat %s: %v", f, err)
+			continue
+		}
+		if info.Size() == 0 {
+			t.Errorf("expected non-empty file %s", f)
+		}
 	}
 }

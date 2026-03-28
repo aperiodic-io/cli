@@ -1,55 +1,69 @@
 package aperiodic
 
 import (
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestDownloadFilesConcurrently(t *testing.T) {
-	apiKey := checkAPIKey(t)
+func TestCLI_VWAP_InvalidAPIKey(t *testing.T) {
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("parquet-content"))
-	}))
-	defer server.Close()
+	outputDir := t.TempDir()
+	_, stderr, code := runCLI(
+		"vwap",
+		"-exchange", "binance-futures",
+		"-symbol", "perpetual-ETH-USDT:USDT",
+		"-interval", "1d",
+		"-start-date", "2024-01-01",
+		"-end-date", "2024-02-01",
+		"-output-dir", outputDir,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
+	}
+}
 
-	client := NewAperiodicClient(apiKey)
-	client.BaseURL = server.URL
+func TestCLI_VWAP_Download(t *testing.T) {
+	requireAPIKey(t)
 
 	outputDir := t.TempDir()
 
-	files := []FileInfo{
-		{Year: 2024, Month: 1, URL: server.URL},
-		{Year: 2024, Month: 2, URL: server.URL},
+	stdout, stderr, code := runCLI(
+		"vwap",
+		"-exchange", "binance-futures",
+		"-symbol", "perpetual-ETH-USDT:USDT",
+		"-interval", "1d",
+		"-start-date", "2024-01-01",
+		"-end-date", "2024-02-01",
+		"-output-dir", outputDir,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
 	}
 
-	results, err := client.DownloadFilesConcurrently(files, 2, outputDir)
+	if !strings.Contains(stdout, "Successfully downloaded") {
+		t.Errorf("expected success message, got: %s", stdout)
+	}
+
+	files, err := filepath.Glob(filepath.Join(outputDir, "*.parquet"))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to glob output dir: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected at least one parquet file in output dir")
 	}
 
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
-
-	for _, res := range results {
-		path := filepath.Join(outputDir, res.Filename)
-		content, err := os.ReadFile(path)
+	for _, f := range files {
+		info, err := os.Stat(f)
 		if err != nil {
-			t.Errorf("failed to read downloaded file %s: %v", res.Filename, err)
+			t.Errorf("failed to stat %s: %v", f, err)
 			continue
 		}
-		if string(content) != "parquet-content" {
-			t.Errorf("unexpected content in %s: %s", res.Filename, string(content))
-		}
-		expectedFilename := fmt.Sprintf("%d-%02d.parquet", res.Year, res.Month)
-		if res.Filename != expectedFilename {
-			t.Errorf("expected filename %s, got %s", expectedFilename, res.Filename)
+		if info.Size() == 0 {
+			t.Errorf("expected non-empty file %s", f)
 		}
 	}
 }

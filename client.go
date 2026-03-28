@@ -97,10 +97,14 @@ func (c *AperiodicClient) handleAPIError(resp *http.Response) error {
 }
 
 func (c *AperiodicClient) GetSymbols(exchange string) ([]string, error) {
-	u, err := url.Parse(fmt.Sprintf("%s/symbols/%s", c.BaseURL, exchange))
+	u, err := url.Parse(fmt.Sprintf("%s/metadata/symbols", c.BaseURL))
 	if err != nil {
 		return nil, err
 	}
+
+	q := u.Query()
+	q.Set("exchange", exchange)
+	u.RawQuery = q.Encode()
 
 	req := &http.Request{
 		Method: http.MethodGet,
