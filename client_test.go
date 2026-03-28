@@ -18,6 +18,10 @@ func requireAPIKey(t *testing.T) string {
 	if apiKey == "" {
 		t.Skip("APERIODIC_API_KEY not set, skipping integration test")
 	}
+
+	// Force production base URL for all integration tests
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+
 	return apiKey
 }
 
@@ -125,7 +129,7 @@ func TestCLI_UnknownCommand(t *testing.T) {
 func TestCLI_Symbols(t *testing.T) {
 	requireAPIKey(t)
 
-	stdout, stderr, code := runCLI("symbols", "-exchange", "binance")
+	stdout, stderr, code := runCLI("symbols", "-exchange", "binance-futures")
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
 	}
@@ -144,7 +148,7 @@ func TestCLI_Symbols_Unauthorized(t *testing.T) {
 		Stderr: &bytes.Buffer{},
 		Env:    func(string) string { return "" },
 	}
-	code := cli.Run([]string{"symbols", "-api-key", "wrong-key", "-exchange", "binance"})
+	code := cli.Run([]string{"symbols", "-api-key", "wrong-key", "-exchange", "binance-futures"})
 	if code != 1 {
 		t.Fatalf("expected exit code 1 for unauthorized, got %d", code)
 	}
@@ -180,7 +184,7 @@ func TestCLI_OHLCV_Download(t *testing.T) {
 
 	stdout, stderr, code := runCLI(
 		"ohlcv",
-		"-exchange", "binance",
+		"-exchange", "binance-futures",
 		"-symbol", "perpetual-BTC-USDT:USDT",
 		"-interval", "1d",
 		"-start-date", "2024-01-01",
