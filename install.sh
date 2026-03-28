@@ -36,14 +36,24 @@ else
     URL="https://github.com/$REPO/releases/download/$VERSION/aperiodic-$OS-$ARCH$EXT"
 fi
 
+INSTALL_DIR="/usr/local/bin"
+
 echo "Detected OS: $OS, Architecture: $ARCH"
 echo "Downloading Aperiodic CLI from $URL..."
 
-if ! curl -L -o "$BINARY_NAME" "$URL"; then
+TMP_FILE=$(mktemp)
+if ! curl -L -o "$TMP_FILE" "$URL"; then
     echo "Error: Failed to download binary. Please check the repository and version."
+    rm -f "$TMP_FILE"
     exit 1
 fi
 
-chmod +x "$BINARY_NAME"
+chmod +x "$TMP_FILE"
 
-echo "Installation complete. You can now run ./$BINARY_NAME"
+if [ -w "$INSTALL_DIR" ]; then
+    mv "$TMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+else
+    sudo mv "$TMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+fi
+
+echo "Installation complete. Run 'aperiodic' to get started."
