@@ -4,14 +4,32 @@ Command-line client for [Aperiodic.io](https://aperiodic.io) — institutional-g
 
 ## Install
 
-```bash
-curl -fsSL https://github.com/aperiodic-io/client-go/releases/latest/download/aperiodic-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o aperiodic && chmod +x aperiodic && sudo mv aperiodic /usr/local/bin/
-```
+**Latest release: [v1.0.1](https://github.com/aperiodic-io/cli/releases/tag/v1.0.1)**
 
-Alternatively, use the install script:
+Download the binary for your platform:
+
+| Platform       | Architecture | Download |
+|----------------|-------------|---------|
+| Linux          | x86_64      | [aperiodic-linux-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-linux-amd64) |
+| Linux          | ARM64       | [aperiodic-linux-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-linux-arm64) |
+| macOS          | x86_64      | [aperiodic-darwin-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-darwin-amd64) |
+| macOS          | Apple Silicon | [aperiodic-darwin-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-darwin-arm64) |
+| Windows        | x86_64      | [aperiodic-windows-amd64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-windows-amd64.exe) |
+| Windows        | ARM64       | [aperiodic-windows-arm64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-windows-arm64.exe) |
+
+Or use the install script (Linux/macOS):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aperiodic-io/cli/main/install.sh | bash
+```
+
+Or manually (Linux/macOS):
+
+```bash
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -fsSL "https://github.com/aperiodic-io/cli/releases/latest/download/aperiodic-${OS}-${ARCH}" -o aperiodic
+chmod +x aperiodic
 ```
 
 ## Authentication
