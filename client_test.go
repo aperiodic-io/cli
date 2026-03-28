@@ -116,14 +116,14 @@ func TestCLI_MissingAPIKey(t *testing.T) {
 	}
 }
 
-func TestCLI_UnknownCommand(t *testing.T) {
+func TestCLI_MetricMissingOutputDir(t *testing.T) {
 	t.Setenv("APERIODIC_API_KEY", "fake")
-	_, stderr, code := runCLI("bogus")
+	_, stderr, code := runCLI("flow", "-symbol", "perpetual-BTC-USDT:USDT", "-start-date", "2024-01-01", "-end-date", "2024-01-31")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
-	if !strings.Contains(stderr, "Unknown command") {
-		t.Errorf("expected 'Unknown command' in stderr, got: %s", stderr)
+	if !strings.Contains(stderr, "output-dir") {
+		t.Errorf("expected error about output-dir, got: %s", stderr)
 	}
 }
 
@@ -162,7 +162,7 @@ func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
 func TestCLI_OHLCV_MissingFlags(t *testing.T) {
 	t.Setenv("APERIODIC_API_KEY", "fake")
 
-	// Missing --output-dir
+	// Missing --output-dir (now caught at top level before handleData)
 	_, stderr, code := runCLI("ohlcv", "-symbol", "perpetual-BTC-USDT:USDT", "-start-date", "2024-01-01", "-end-date", "2024-01-31")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)

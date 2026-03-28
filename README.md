@@ -1,0 +1,157 @@
+# Aperiodic CLI
+
+Command-line client for [Aperiodic.io](https://aperiodic.io) — institutional-grade market microstructure, liquidity and order flow metrics with full exchange universe coverage.
+
+## Install
+
+```bash
+curl -fsSL https://github.com/aperiodic-io/client-go/releases/latest/download/aperiodic-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o aperiodic && chmod +x aperiodic && sudo mv aperiodic /usr/local/bin/
+```
+
+Alternatively, use the install script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aperiodic-io/cli/main/install.sh | bash
+```
+
+## Authentication
+
+Set your API key as an environment variable:
+
+```bash
+export APERIODIC_API_KEY=your_api_key
+```
+
+Get your API key at [aperiodic.io](https://aperiodic.io).
+
+## Usage
+
+```
+aperiodic <metric> [flags]
+aperiodic symbols [flags]
+```
+
+The first argument is the metric name. Use `symbols` to list available symbols for an exchange.
+
+## Available Metrics
+
+**OHLCV / VWAP**
+
+| Metric  | Description                          |
+|---------|--------------------------------------|
+| `ohlcv` | Open/high/low/close/volume           |
+| `vtwap` | Volume/time-weighted average price   |
+
+**Trade metrics**
+
+| Metric          | Description               |
+|-----------------|---------------------------|
+| `flow`          | Buy/sell trade flow       |
+| `trade_size`    | Trade size distribution   |
+| `impact`        | Price impact              |
+| `range`         | Price range               |
+| `updownticks`   | Up/down tick count        |
+| `run_structure` | Run structure             |
+| `returns`       | Returns                   |
+| `slippage`      | Slippage                  |
+
+**Order book metrics**
+
+| Metric          | Description                |
+|-----------------|----------------------------|
+| `l1_price`      | L1 best bid/ask price      |
+| `l1_imbalance`  | L1 order book imbalance    |
+| `l1_liquidity`  | L1 liquidity               |
+| `l2_imbalance`  | L2 order book imbalance    |
+| `l2_liquidity`  | L2 liquidity               |
+
+**Derivative metrics**
+
+| Metric             | Description                |
+|--------------------|----------------------------|
+| `basis`            | Basis (spot vs. perp)      |
+| `funding`          | Funding rates              |
+| `open_interest`    | Open interest              |
+| `derivative_price` | Derivative price           |
+
+## Flags
+
+| Flag               | Default           | Description                                   |
+|--------------------|-------------------|-----------------------------------------------|
+| `--exchange`       | `binance-futures` | Exchange name                                 |
+| `--symbol`         |                   | Trading pair symbol (Atlas unified symbology) |
+| `--interval`       | `1h`              | Aggregation interval                          |
+| `--start-date`     |                   | Start date (`YYYY-MM-DD`)                     |
+| `--end-date`       |                   | End date (`YYYY-MM-DD`)                       |
+| `--output-dir`     |                   | Output directory for Parquet files (required) |
+| `--timestamp`      | `exchange`        | Timestamp source (`exchange` or `true`)       |
+| `--max-concurrent` | `10`              | Maximum concurrent downloads                  |
+
+## Examples
+
+**List symbols:**
+```bash
+aperiodic symbols --exchange binance-futures
+```
+
+**Download OHLCV data:**
+```bash
+aperiodic ohlcv \
+  --exchange binance-futures \
+  --symbol BTC-USDT-PERP \
+  --interval 1h \
+  --start-date 2024-01-01 \
+  --end-date 2024-03-31 \
+  --output-dir ./data
+```
+
+**Download trade flow:**
+```bash
+aperiodic flow \
+  --exchange binance-futures \
+  --symbol BTC-USDT-PERP \
+  --interval 1h \
+  --start-date 2024-01-01 \
+  --end-date 2024-03-31 \
+  --output-dir ./data
+```
+
+**Download basis:**
+```bash
+aperiodic basis \
+  --exchange binance-futures \
+  --symbol BTC-USDT-PERP \
+  --interval 1h \
+  --start-date 2024-01-01 \
+  --end-date 2024-03-31 \
+  --output-dir ./data
+```
+
+## Supported Exchanges
+
+| Exchange        | ID                |
+|-----------------|-------------------|
+| Binance Futures | `binance-futures` |
+| OKX Perpetuals  | `okx-perps`       |
+
+## Intervals
+
+`1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`
+
+## Output
+
+All data commands download **Parquet files** to `--output-dir`. Files are fetched concurrently (tunable via `--max-concurrent`) and named by year and month.
+
+## Build from Source
+
+Requires Go 1.24+.
+
+```bash
+git clone https://github.com/aperiodic-io/cli.git
+cd cli
+go build -o aperiodic ./cmd/aperiodic
+```
+
+## License
+
+[ISC](LICENSE)

@@ -23,7 +23,6 @@ type Exchange string
 
 const (
 	ExchangeBinanceFutures Exchange = "binance-futures"
-	ExchangeBinance        Exchange = "binance"
 	ExchangeOkxPerps       Exchange = "okx-perps"
 )
 

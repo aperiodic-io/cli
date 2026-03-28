@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-func TestCLI_VWAP_InvalidAPIKey(t *testing.T) {
+func TestCLI_VTWAP_InvalidAPIKey(t *testing.T) {
 	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	outputDir := t.TempDir()
 	_, stderr, code := runCLI(
-		"vwap",
+		"vtwap",
 		"-exchange", "binance-futures",
 		"-symbol", "perpetual-ETH-USDT:USDT",
 		"-interval", "1d",
@@ -26,13 +26,13 @@ func TestCLI_VWAP_InvalidAPIKey(t *testing.T) {
 	}
 }
 
-func TestCLI_VWAP_Download(t *testing.T) {
+func TestCLI_VTWAP_Download(t *testing.T) {
 	requireAPIKey(t)
 
 	outputDir := t.TempDir()
 
 	stdout, stderr, code := runCLI(
-		"vwap",
+		"vtwap",
 		"-exchange", "binance-futures",
 		"-symbol", "perpetual-ETH-USDT:USDT",
 		"-interval", "1d",
