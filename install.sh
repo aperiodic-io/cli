@@ -4,7 +4,7 @@ set -e
 # Aperiodic CLI Installation Script
 # This script downloads the appropriate binary for your OS and architecture.
 
-REPO="aperiodic-io/client-go"
+REPO="aperiodic-io/cli"
 VERSION=${1:-latest}
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
