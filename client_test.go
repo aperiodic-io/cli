@@ -16,7 +16,7 @@ func requireAPIKey(t *testing.T) string {
 
 	apiKey := os.Getenv("APERIODIC_API_KEY")
 	if apiKey == "" {
-		t.Skip("APERIODIC_API_KEY not set, skipping integration test")
+		t.Fatal("APERIODIC_API_KEY environment variable not set")
 	}
 
 	// Force production base URL for all integration tests
