@@ -24,8 +24,6 @@ jobs:
     - name: Test
       env:
         APERIODIC_API_KEY: ${{ secrets.APERIODIC_API_KEY }}
-        CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-        CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       run: go test -v ./...
 
   build:
