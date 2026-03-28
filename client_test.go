@@ -19,6 +19,10 @@ func requireAPIKey(t *testing.T) string {
 		t.Skip("APERIODIC_API_KEY not set, skipping integration test")
 	}
 
+	if os.Getenv("CF_ACCESS_CLIENT_ID") == "" || os.Getenv("CF_ACCESS_CLIENT_SECRET") == "" {
+		t.Skip("CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET not set, skipping integration test")
+	}
+
 	// Force production base URL for all integration tests
 	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
 
