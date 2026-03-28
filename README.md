@@ -116,7 +116,7 @@ aperiodic symbols --exchange binance-futures
 ```bash
 aperiodic ohlcv \
   --exchange binance-futures \
-  --symbol BTC-USDT-PERP \
+  --symbol perpetual-BTC-USDT:USDT \
   --interval 1h \
   --start-date 2024-01-01 \
   --end-date 2024-03-31 \
@@ -127,7 +127,7 @@ aperiodic ohlcv \
 ```bash
 aperiodic flow \
   --exchange binance-futures \
-  --symbol BTC-USDT-PERP \
+  --symbol perpetual-BTC-USDT:USDT \
   --interval 1h \
   --start-date 2024-01-01 \
   --end-date 2024-03-31 \
@@ -138,7 +138,7 @@ aperiodic flow \
 ```bash
 aperiodic basis \
   --exchange binance-futures \
-  --symbol BTC-USDT-PERP \
+  --symbol perpetual-BTC-USDT:USDT \
   --interval 1h \
   --start-date 2024-01-01 \
   --end-date 2024-03-31 \
