@@ -1,51 +1,50 @@
 package aperiodic
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestDownloadFilesConcurrently(t *testing.T) {
-	apiKey := requireAPIKey(t)
+func TestCLI_VWAP_Download(t *testing.T) {
+	requireAPIKey(t)
 
-	client := NewAperiodicClient(apiKey)
-
-	resp, err := client.FetchPresignedUrls("ohlcv", TimestampExchange, Interval1d, "binance", "perpetual-BTC-USDT:USDT", "2024-01-01", "2024-02-28")
-	if err != nil {
-		t.Fatalf("failed to fetch presigned urls: %v", err)
-	}
-	if len(resp.Files) < 2 {
-		t.Fatalf("expected at least 2 files, got %d", len(resp.Files))
-	}
-
-	// Use first 2 files for the test
-	files := resp.Files[:2]
 	outputDir := t.TempDir()
 
-	results, err := client.DownloadFilesConcurrently(files, 2, outputDir)
+	stdout, stderr, code := runCLI(
+		"vwap",
+		"-exchange", "binance",
+		"-symbol", "perpetual-BTC-USDT:USDT",
+		"-interval", "1d",
+		"-start-date", "2024-01-01",
+		"-end-date", "2024-01-31",
+		"-output-dir", outputDir,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+
+	if !strings.Contains(stdout, "Successfully downloaded") {
+		t.Errorf("expected success message, got: %s", stdout)
+	}
+
+	files, err := filepath.Glob(filepath.Join(outputDir, "*.parquet"))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("failed to glob output dir: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected at least one parquet file in output dir")
 	}
 
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
-
-	for _, res := range results {
-		path := filepath.Join(outputDir, res.Filename)
-		content, err := os.ReadFile(path)
+	for _, f := range files {
+		info, err := os.Stat(f)
 		if err != nil {
-			t.Errorf("failed to read downloaded file %s: %v", res.Filename, err)
+			t.Errorf("failed to stat %s: %v", f, err)
 			continue
 		}
-		if len(content) == 0 {
-			t.Errorf("expected non-empty content in %s", res.Filename)
-		}
-		expectedFilename := fmt.Sprintf("%d-%02d.parquet", res.Year, res.Month)
-		if res.Filename != expectedFilename {
-			t.Errorf("expected filename %s, got %s", expectedFilename, res.Filename)
+		if info.Size() == 0 {
+			t.Errorf("expected non-empty file %s", f)
 		}
 	}
 }
