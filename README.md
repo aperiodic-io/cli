@@ -17,19 +17,19 @@ Download the binary for your platform:
 | Windows        | x86_64      | [aperiodic-windows-amd64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-windows-amd64.exe) |
 | Windows        | ARM64       | [aperiodic-windows-arm64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-windows-arm64.exe) |
 
-Or install with a single command (Linux/macOS):
+Or use the install script (Linux/macOS):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aperiodic-io/cli/main/install.sh | bash
+```
+
+Or manually (Linux/macOS):
 
 ```bash
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -fsSL "https://github.com/aperiodic-io/cli/releases/latest/download/aperiodic-${OS}-${ARCH}" -o aperiodic
 chmod +x aperiodic
-```
-
-Alternatively, use the install script:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/aperiodic-io/cli/main/install.sh | bash
 ```
 
 ## Authentication
