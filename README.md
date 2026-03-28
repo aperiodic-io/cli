@@ -20,7 +20,10 @@ Download the binary for your platform:
 Or install with a single command (Linux/macOS):
 
 ```bash
-curl -fsSL https://github.com/aperiodic-io/cli/releases/latest/download/aperiodic-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o aperiodic && chmod +x aperiodic
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -fsSL "https://github.com/aperiodic-io/cli/releases/latest/download/aperiodic-${OS}-${ARCH}" -o aperiodic
+chmod +x aperiodic
 ```
 
 Alternatively, use the install script:
