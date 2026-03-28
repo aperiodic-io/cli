@@ -1,7 +1,6 @@
 package aperiodic
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,25 +9,20 @@ import (
 
 func TestCLI_VWAP_InvalidAPIKey(t *testing.T) {
 	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	outputDir := t.TempDir()
-	cli := &CLI{
-		Stdout: &bytes.Buffer{},
-		Stderr: &bytes.Buffer{},
-		Env:    func(string) string { return "" },
-	}
-	code := cli.Run([]string{
+	_, stderr, code := runCLI(
 		"vwap",
-		"-api-key", "invalid-key",
 		"-exchange", "binance-futures",
 		"-symbol", "perpetual-ETH-USDT:USDT",
 		"-interval", "1d",
 		"-start-date", "2024-01-01",
 		"-end-date", "2024-02-01",
 		"-output-dir", outputDir,
-	})
+	)
 	if code != 1 {
-		t.Fatalf("expected exit code 1 for invalid API key, got %d", code)
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
 	}
 }
 

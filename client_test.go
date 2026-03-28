@@ -117,7 +117,8 @@ func TestCLI_MissingAPIKey(t *testing.T) {
 }
 
 func TestCLI_UnknownCommand(t *testing.T) {
-	_, stderr, code := runCLI("bogus", "-api-key", "fake")
+	t.Setenv("APERIODIC_API_KEY", "fake")
+	_, stderr, code := runCLI("bogus")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
@@ -131,45 +132,38 @@ func TestCLI_UnknownCommand(t *testing.T) {
 
 func TestCLI_Symbols_InvalidAPIKey(t *testing.T) {
 	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
-	cli := &CLI{
-		Stdout: &bytes.Buffer{},
-		Stderr: &bytes.Buffer{},
-		Env:    func(string) string { return "" },
-	}
-	code := cli.Run([]string{"symbols", "-api-key", "invalid-key", "-exchange", "binance-futures"})
+	_, stderr, code := runCLI("symbols", "-exchange", "binance-futures")
 	if code != 1 {
-		t.Fatalf("expected exit code 1 for invalid API key, got %d", code)
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
 	}
 }
 
 func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
 	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	outputDir := t.TempDir()
-	cli := &CLI{
-		Stdout: &bytes.Buffer{},
-		Stderr: &bytes.Buffer{},
-		Env:    func(string) string { return "" },
-	}
-	code := cli.Run([]string{
+	_, stderr, code := runCLI(
 		"ohlcv",
-		"-api-key", "invalid-key",
 		"-exchange", "binance-futures",
 		"-symbol", "perpetual-BTC-USDT:USDT",
 		"-interval", "1d",
 		"-start-date", "2024-01-01",
 		"-end-date", "2024-02-01",
 		"-output-dir", outputDir,
-	})
+	)
 	if code != 1 {
-		t.Fatalf("expected exit code 1 for invalid API key, got %d", code)
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
 	}
 }
 
 func TestCLI_OHLCV_MissingFlags(t *testing.T) {
+	t.Setenv("APERIODIC_API_KEY", "fake")
+
 	// Missing --output-dir
-	_, stderr, code := runCLI("ohlcv", "-api-key", "fake", "-symbol", "perpetual-BTC-USDT:USDT", "-start-date", "2024-01-01", "-end-date", "2024-01-31")
+	_, stderr, code := runCLI("ohlcv", "-symbol", "perpetual-BTC-USDT:USDT", "-start-date", "2024-01-01", "-end-date", "2024-01-31")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
@@ -179,7 +173,7 @@ func TestCLI_OHLCV_MissingFlags(t *testing.T) {
 
 	// Missing --symbol
 	outputDir := t.TempDir()
-	_, stderr, code = runCLI("ohlcv", "-api-key", "fake", "-start-date", "2024-01-01", "-end-date", "2024-01-31", "-output-dir", outputDir)
+	_, stderr, code = runCLI("ohlcv", "-start-date", "2024-01-01", "-end-date", "2024-01-31", "-output-dir", outputDir)
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
