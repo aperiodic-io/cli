@@ -33,6 +33,14 @@ func (c *CLI) Run(args []string) int {
 		return 0
 	}
 
+	apiKey := c.Env("APERIODIC_API_KEY")
+	if apiKey == "" {
+		fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set")
+		return 1
+	}
+
+	client := NewAperiodicClient(apiKey)
+
 	fs := flag.NewFlagSet("aperiodic", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
@@ -43,51 +51,55 @@ func (c *CLI) Run(args []string) int {
 	endDateFlag := fs.String("end-date", "", "End date (YYYY-MM-DD)")
 	maxConcurrentFlag := fs.Int("max-concurrent", 10, "Maximum concurrent downloads")
 	timestampFlag := fs.String("timestamp", "exchange", "Timestamp source (exchange, true)")
-	metricFlag := fs.String("metric", "", "Specific metric to fetch")
 	outputDirFlag := fs.String("output-dir", "", "Output directory for Parquet files (mandatory)")
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
 
-	apiKey := c.Env("APERIODIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set")
-		return 1
-	}
-
-	client := NewAperiodicClient(apiKey)
-
-	switch cmd {
-	case "symbols":
+	if cmd == "symbols" {
 		return c.handleSymbols(client, *exchangeFlag)
-	case "ohlcv", "vwap", "twap", "metrics", "derivative":
-		if *outputDirFlag == "" {
-			fmt.Fprintln(c.Stderr, "Error: --output-dir is mandatory for this command")
-			return 1
-		}
-		return c.handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *metricFlag, *outputDirFlag)
-	default:
-		fmt.Fprintf(c.Stderr, "Unknown command: %s\n", cmd)
-		c.printUsage()
+	}
+
+	if *outputDirFlag == "" {
+		fmt.Fprintln(c.Stderr, "Error: --output-dir is mandatory")
 		return 1
 	}
+
+	return c.handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *outputDirFlag)
 }
 
 func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "Aperiodic CLI Client")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Usage:")
-	fmt.Fprintln(c.Stdout, "  aperiodic <command> [flags]")
+	fmt.Fprintln(c.Stdout, "  aperiodic <metric> [flags]")
+	fmt.Fprintln(c.Stdout, "  aperiodic symbols [flags]")
+	fmt.Fprintln(c.Stdout)
+	fmt.Fprintln(c.Stdout, "Metrics:")
+	fmt.Fprintln(c.Stdout, "  ohlcv             OHLCV (open/high/low/close/volume)")
+	fmt.Fprintln(c.Stdout, "  vtwap             Volume/time-weighted average price")
+	fmt.Fprintln(c.Stdout, "  flow              Buy/sell trade flow")
+	fmt.Fprintln(c.Stdout, "  trade_size        Trade size distribution")
+	fmt.Fprintln(c.Stdout, "  impact            Price impact")
+	fmt.Fprintln(c.Stdout, "  range             Price range")
+	fmt.Fprintln(c.Stdout, "  updownticks       Up/down tick count")
+	fmt.Fprintln(c.Stdout, "  run_structure     Run structure")
+	fmt.Fprintln(c.Stdout, "  returns           Returns")
+	fmt.Fprintln(c.Stdout, "  slippage          Slippage")
+	fmt.Fprintln(c.Stdout, "  l1_price          L1 best bid/ask price")
+	fmt.Fprintln(c.Stdout, "  l1_imbalance      L1 order book imbalance")
+	fmt.Fprintln(c.Stdout, "  l1_liquidity      L1 liquidity")
+	fmt.Fprintln(c.Stdout, "  l2_imbalance      L2 order book imbalance")
+	fmt.Fprintln(c.Stdout, "  l2_liquidity      L2 liquidity")
+	fmt.Fprintln(c.Stdout, "  basis             Basis (spot vs. perp spread)")
+	fmt.Fprintln(c.Stdout, "  funding           Funding rates")
+	fmt.Fprintln(c.Stdout, "  open_interest     Open interest")
+	fmt.Fprintln(c.Stdout, "  derivative_price  Derivative price")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Commands:")
-	fmt.Fprintln(c.Stdout, "  symbols     List available symbols for an exchange")
-	fmt.Fprintln(c.Stdout, "  ohlcv       Download OHLCV data")
-	fmt.Fprintln(c.Stdout, "  vwap        Download VWAP data")
-	fmt.Fprintln(c.Stdout, "  twap        Download TWAP data")
-	fmt.Fprintln(c.Stdout, "  metrics     Download trade/L1/L2 metrics (use --metric flag for specific metric)")
-	fmt.Fprintln(c.Stdout, "  derivative  Download trade/L1/L2 metrics (use --metric flag for specific metric)")
-	fmt.Fprintln(c.Stdout, "  help        Show this help")
+	fmt.Fprintln(c.Stdout, "  symbols  List available symbols for an exchange")
+	fmt.Fprintln(c.Stdout, "  help     Show this help")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Environment:")
 	fmt.Fprintln(c.Stdout, "  APERIODIC_API_KEY  Aperiodic API key (required)")
@@ -101,8 +113,6 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "        Aggregation interval (default \"1h\")")
 	fmt.Fprintln(c.Stdout, "  -max-concurrent int")
 	fmt.Fprintln(c.Stdout, "        Maximum concurrent downloads (default 10)")
-	fmt.Fprintln(c.Stdout, "  -metric string")
-	fmt.Fprintln(c.Stdout, "        Specific metric to fetch")
 	fmt.Fprintln(c.Stdout, "  -output-dir string")
 	fmt.Fprintln(c.Stdout, "        Output directory for Parquet files (mandatory)")
 	fmt.Fprintln(c.Stdout, "  -start-date string")
@@ -127,7 +137,7 @@ func (c *CLI) handleSymbols(client *AperiodicClient, exchange string) int {
 	return 0
 }
 
-func (c *CLI) handleData(client *AperiodicClient, cmd, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, metric, outputDir string) int {
+func (c *CLI) handleData(client *AperiodicClient, metric, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, outputDir string) int {
 	if symbol == "" {
 		fmt.Fprintln(c.Stderr, "Error: --symbol is required")
 		return 1
@@ -137,16 +147,7 @@ func (c *CLI) handleData(client *AperiodicClient, cmd, timestamp, interval, exch
 		return 1
 	}
 
-	bucket := cmd
-	if (cmd == "metrics" || cmd == "derivative") && metric != "" {
-		bucket = metric
-	} else if cmd == "ohlcv" {
-		bucket = "ohlcv"
-	} else if cmd == "vwap" || cmd == "twap" {
-		bucket = "vtwap"
-	}
-
-	resp, err := client.FetchPresignedUrls(bucket, TimestampType(timestamp), Interval(interval), exchange, symbol, startDate, endDate)
+	resp, err := client.FetchPresignedUrls(metric, TimestampType(timestamp), Interval(interval), exchange, symbol, startDate, endDate)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "Error fetching file URLs: %v\n", err)
 		return 1

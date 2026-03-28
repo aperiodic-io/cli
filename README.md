@@ -27,37 +27,69 @@ Get your API key at [aperiodic.io](https://aperiodic.io).
 ## Usage
 
 ```
-aperiodic <command> [flags]
+aperiodic <metric> [flags]
+aperiodic symbols [flags]
 ```
 
-### Commands
+The first argument is the metric name. Use `symbols` to list available symbols for an exchange.
 
-| Command      | Description                                                         |
-|--------------|---------------------------------------------------------------------|
-| `symbols`    | List available symbols for an exchange                              |
-| `ohlcv`      | Download OHLCV (open/high/low/close/volume) data                    |
-| `vwap`       | Download VWAP data                                                  |
-| `twap`       | Download TWAP data                                                  |
-| `metrics`    | Download trade, L1, or L2 metrics (use `--metric` for a specific one) |
-| `derivative` | Download derivative metrics (use `--metric` for a specific one)     |
+## Available Metrics
 
-### Flags
+**OHLCV / VWAP**
 
-| Flag               | Default             | Description                                      |
-|--------------------|---------------------|--------------------------------------------------|
-| `--exchange`       | `binance-futures`   | Exchange name                                    |
-| `--symbol`         |                     | Trading pair symbol (Atlas unified symbology)    |
-| `--interval`       | `1h`                | Aggregation interval                             |
-| `--start-date`     |                     | Start date (`YYYY-MM-DD`)                        |
-| `--end-date`       |                     | End date (`YYYY-MM-DD`)                          |
-| `--metric`         |                     | Specific metric to fetch                         |
-| `--output-dir`     |                     | Output directory for Parquet files (required)    |
-| `--timestamp`      | `exchange`          | Timestamp source (`exchange` or `true`)          |
-| `--max-concurrent` | `10`                | Maximum concurrent downloads                     |
+| Metric  | Description                          |
+|---------|--------------------------------------|
+| `ohlcv` | Open/high/low/close/volume           |
+| `vtwap` | Volume/time-weighted average price   |
+
+**Trade metrics**
+
+| Metric          | Description               |
+|-----------------|---------------------------|
+| `flow`          | Buy/sell trade flow       |
+| `trade_size`    | Trade size distribution   |
+| `impact`        | Price impact              |
+| `range`         | Price range               |
+| `updownticks`   | Up/down tick count        |
+| `run_structure` | Run structure             |
+| `returns`       | Returns                   |
+| `slippage`      | Slippage                  |
+
+**Order book metrics**
+
+| Metric          | Description                |
+|-----------------|----------------------------|
+| `l1_price`      | L1 best bid/ask price      |
+| `l1_imbalance`  | L1 order book imbalance    |
+| `l1_liquidity`  | L1 liquidity               |
+| `l2_imbalance`  | L2 order book imbalance    |
+| `l2_liquidity`  | L2 liquidity               |
+
+**Derivative metrics**
+
+| Metric             | Description                |
+|--------------------|----------------------------|
+| `basis`            | Basis (spot vs. perp)      |
+| `funding`          | Funding rates              |
+| `open_interest`    | Open interest              |
+| `derivative_price` | Derivative price           |
+
+## Flags
+
+| Flag               | Default           | Description                                   |
+|--------------------|-------------------|-----------------------------------------------|
+| `--exchange`       | `binance-futures` | Exchange name                                 |
+| `--symbol`         |                   | Trading pair symbol (Atlas unified symbology) |
+| `--interval`       | `1h`              | Aggregation interval                          |
+| `--start-date`     |                   | Start date (`YYYY-MM-DD`)                     |
+| `--end-date`       |                   | End date (`YYYY-MM-DD`)                       |
+| `--output-dir`     |                   | Output directory for Parquet files (required) |
+| `--timestamp`      | `exchange`        | Timestamp source (`exchange` or `true`)       |
+| `--max-concurrent` | `10`              | Maximum concurrent downloads                  |
 
 ## Examples
 
-**List symbols on Binance Futures:**
+**List symbols:**
 ```bash
 aperiodic symbols --exchange binance-futures
 ```
@@ -73,24 +105,22 @@ aperiodic ohlcv \
   --output-dir ./data
 ```
 
-**Download trade flow metrics:**
+**Download trade flow:**
 ```bash
-aperiodic metrics \
+aperiodic flow \
   --exchange binance-futures \
   --symbol BTC-USDT-PERP \
-  --metric flow \
   --interval 1h \
   --start-date 2024-01-01 \
   --end-date 2024-03-31 \
   --output-dir ./data
 ```
 
-**Download derivative basis data:**
+**Download basis:**
 ```bash
-aperiodic derivative \
+aperiodic basis \
   --exchange binance-futures \
   --symbol BTC-USDT-PERP \
-  --metric basis \
   --interval 1h \
   --start-date 2024-01-01 \
   --end-date 2024-03-31 \
@@ -99,50 +129,14 @@ aperiodic derivative \
 
 ## Supported Exchanges
 
-| Exchange           | ID                  |
-|--------------------|---------------------|
-| Binance Futures    | `binance-futures`   |
-| Binance Spot       | `binance`           |
-| OKX Perpetuals     | `okx-perps`         |
+| Exchange        | ID                |
+|-----------------|-------------------|
+| Binance Futures | `binance-futures` |
+| OKX Perpetuals  | `okx-perps`       |
 
 ## Intervals
 
 `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`
-
-## Available Metrics
-
-**Trade metrics** (`metrics` command)
-
-| Metric          | Description                          |
-|-----------------|--------------------------------------|
-| `flow`          | Buy/sell trade flow                  |
-| `vtwap`         | Volume-weighted average price        |
-| `trade_size`    | Trade size distribution              |
-| `impact`        | Price impact                         |
-| `range`         | Price range                          |
-| `updownticks`   | Up/down tick count                   |
-| `run_structure` | Run structure                        |
-| `returns`       | Returns                              |
-| `slippage`      | Slippage                             |
-
-**Order book metrics** (`metrics` command)
-
-| Metric          | Description                          |
-|-----------------|--------------------------------------|
-| `l1_price`      | L1 best bid/ask price                |
-| `l1_imbalance`  | L1 order book imbalance              |
-| `l1_liquidity`  | L1 liquidity                         |
-| `l2_imbalance`  | L2 order book imbalance              |
-| `l2_liquidity`  | L2 liquidity                         |
-
-**Derivative metrics** (`derivative` command)
-
-| Metric             | Description                        |
-|--------------------|------------------------------------|
-| `basis`            | Basis (spot vs. perp spread)       |
-| `funding`          | Funding rates                      |
-| `open_interest`    | Open interest                      |
-| `derivative_price` | Derivative price                   |
 
 ## Output
 
