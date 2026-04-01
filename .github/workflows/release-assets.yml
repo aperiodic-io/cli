@@ -79,6 +79,8 @@ jobs:
         import os
 
         tag = os.environ["TAG"]
+        if not tag.startswith("v"):
+            tag = f"v{tag}"
         readme = Path("README.md")
         content = readme.read_text()
         content = re.sub(r"releases/tag/v[^)]+", f"releases/tag/{tag}", content)
