@@ -4,18 +4,18 @@ Command-line client for [Aperiodic.io](https://aperiodic.io) — institutional-g
 
 ## Install
 
-**Latest release: [v1.0.1](https://github.com/aperiodic-io/cli/releases/tag/v1.0.1)**
+**Latest release: [v1.0.3](https://github.com/aperiodic-io/cli/releases/tag/v1.0.3)**
 
 Download the binary for your platform:
 
 | Platform       | Architecture | Download |
 |----------------|-------------|---------|
-| Linux          | x86_64      | [aperiodic-linux-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-linux-amd64) |
-| Linux          | ARM64       | [aperiodic-linux-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-linux-arm64) |
-| macOS          | x86_64      | [aperiodic-darwin-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-darwin-amd64) |
-| macOS          | Apple Silicon | [aperiodic-darwin-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-darwin-arm64) |
-| Windows        | x86_64      | [aperiodic-windows-amd64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-windows-amd64.exe) |
-| Windows        | ARM64       | [aperiodic-windows-arm64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.1/aperiodic-windows-arm64.exe) |
+| Linux          | x86_64      | [aperiodic-linux-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.0.3/aperiodic-linux-amd64) |
+| Linux          | ARM64       | [aperiodic-linux-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.0.3/aperiodic-linux-arm64) |
+| macOS          | x86_64      | [aperiodic-darwin-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.0.3/aperiodic-darwin-amd64) |
+| macOS          | Apple Silicon | [aperiodic-darwin-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.0.3/aperiodic-darwin-arm64) |
+| Windows        | x86_64      | [aperiodic-windows-amd64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.3/aperiodic-windows-amd64.exe) |
+| Windows        | ARM64       | [aperiodic-windows-arm64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.0.3/aperiodic-windows-arm64.exe) |
 
 Or use the install script (Linux/macOS):
 
