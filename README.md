@@ -147,10 +147,11 @@ aperiodic basis \
 
 ## Supported Exchanges
 
-| Exchange        | ID                |
-|-----------------|-------------------|
-| Binance Futures | `binance-futures` |
-| OKX Perpetuals  | `okx-perps`       |
+| Exchange              | ID                   |
+|-----------------------|----------------------|
+| Binance Futures       | `binance-futures`    |
+| OKX Perpetuals        | `okx-perps`          |
+| Hyperliquid Perpetuals | `hyperliquid-perps` |
 
 ## Intervals
 

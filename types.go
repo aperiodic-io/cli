@@ -23,8 +23,9 @@ const (
 type Exchange string
 
 const (
-	ExchangeBinanceFutures Exchange = "binance-futures"
-	ExchangeOkxPerps       Exchange = "okx-perps"
+	ExchangeBinanceFutures    Exchange = "binance-futures"
+	ExchangeOkxPerps          Exchange = "okx-perps"
+	ExchangeHyperliquidPerps  Exchange = "hyperliquid-perps"
 )
 
 type TradeMetric string

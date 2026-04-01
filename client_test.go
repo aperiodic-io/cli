@@ -140,6 +140,16 @@ func TestCLI_Symbols_InvalidAPIKey(t *testing.T) {
 	}
 }
 
+func TestCLI_Symbols_HyperliquidPerps_InvalidAPIKey(t *testing.T) {
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
+
+	_, stderr, code := runCLI("symbols", "-exchange", "hyperliquid-perps")
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
+	}
+}
+
 func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
 	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
@@ -152,6 +162,25 @@ func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
 		"-interval", "1d",
 		"-start-date", "2024-01-01",
 		"-end-date", "2024-02-01",
+		"-output-dir", outputDir,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid API key, got %d; stderr: %s", code, stderr)
+	}
+}
+
+func TestCLI_OHLCV_HyperliquidPerps_InvalidAPIKey(t *testing.T) {
+	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	t.Setenv("APERIODIC_API_KEY", "invalid-key")
+
+	outputDir := t.TempDir()
+	_, stderr, code := runCLI(
+		"ohlcv",
+		"-exchange", "hyperliquid-perps",
+		"-symbol", "perpetual-BTC-USDC:USDC",
+		"-interval", "1d",
+		"-start-date", "2025-03-01",
+		"-end-date", "2025-04-01",
 		"-output-dir", outputDir,
 	)
 	if code != 1 {
