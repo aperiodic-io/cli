@@ -79,13 +79,19 @@ jobs:
         import os
 
         tag = os.environ["TAG"]
-        if not tag.startswith("v"):
-            tag = f"v{tag}"
         readme = Path("README.md")
         content = readme.read_text()
         tag_pattern = r"v?[A-Za-z0-9][A-Za-z0-9._-]*"
-        content = re.sub(rf"releases/tag/{tag_pattern}", f"releases/tag/{tag}", content)
-        content = re.sub(rf"releases/download/{tag_pattern}", f"releases/download/{tag}", content)
+        content = re.sub(
+            rf"https://github\.com/aperiodic-io/cli/releases/tag/{tag_pattern}",
+            f"https://github.com/aperiodic-io/cli/releases/tag/{tag}",
+            content,
+        )
+        content = re.sub(
+            rf"https://github\.com/aperiodic-io/cli/releases/download/{tag_pattern}",
+            f"https://github.com/aperiodic-io/cli/releases/download/{tag}",
+            content,
+        )
         readme.write_text(content)
         PY
     - name: Commit README update
