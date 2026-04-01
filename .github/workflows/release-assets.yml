@@ -65,3 +65,35 @@ jobs:
         files: release/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Check out default branch
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+    - name: Update README release links
+      env:
+        TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        import re
+        import os
+
+        tag = os.environ["TAG"]
+        readme = Path("README.md")
+        content = readme.read_text()
+        content = re.sub(r"releases/tag/v[^)]+", f"releases/tag/{tag}", content)
+        content = re.sub(r"releases/download/v[^/]+", f"releases/download/{tag}", content)
+        readme.write_text(content)
+        PY
+    - name: Commit README update
+      env:
+        TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      run: |
+        if git diff --quiet README.md; then
+          exit 0
+        fi
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git add README.md
+        git commit -m "docs: update README release links for ${TAG}"
+        git push
