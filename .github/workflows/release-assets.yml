@@ -81,7 +81,7 @@ jobs:
         tag = os.environ["TAG"]
         readme = Path("README.md")
         content = readme.read_text()
-        tag_pattern = r"v?[A-Za-z0-9][A-Za-z0-9._-]*"
+        tag_pattern = r"v?[0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9._-]+)?"
         content = re.sub(
             rf"https://github\.com/aperiodic-io/cli/releases/tag/{tag_pattern}",
             f"https://github.com/aperiodic-io/cli/releases/tag/{tag}",
@@ -101,8 +101,8 @@ jobs:
         if git diff --quiet README.md; then
           exit 0
         fi
-        git config user.name github-actions[bot]
-        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add README.md
         git commit -m "docs: update README release links for ${TAG}"
         git push
