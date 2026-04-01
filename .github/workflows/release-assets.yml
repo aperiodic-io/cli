@@ -83,8 +83,8 @@ jobs:
             tag = f"v{tag}"
         readme = Path("README.md")
         content = readme.read_text()
-        content = re.sub(r"releases/tag/v[^)]+", f"releases/tag/{tag}", content)
-        content = re.sub(r"releases/download/v[^/]+", f"releases/download/{tag}", content)
+        content = re.sub(r"releases/tag/v?[^)]+", f"releases/tag/{tag}", content)
+        content = re.sub(r"releases/download/v?[^/]+", f"releases/download/{tag}", content)
         readme.write_text(content)
         PY
     - name: Commit README update
