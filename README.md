@@ -42,6 +42,8 @@ export APERIODIC_API_KEY=your_api_key
 
 Get your API key at [aperiodic.io](https://aperiodic.io).
 
+For [preview data](#preview-data) (`--preview`), no API key is required — the CLI uses the shared public demo key automatically.
+
 ## Usage
 
 ```
@@ -104,6 +106,7 @@ The first argument is the metric name. Use `symbols` to list available symbols f
 | `--output-dir`     |                   | Output directory for Parquet files (required) |
 | `--timestamp`      | `exchange`        | Timestamp source (`exchange` or `true`)       |
 | `--max-concurrent` | `10`              | Maximum concurrent downloads                  |
+| `--preview`        | `false`           | Query the free preview dataset (no subscription; whitelisted parameters only) |
 
 ## Examples
 
@@ -144,6 +147,21 @@ aperiodic basis \
   --end-date 2024-03-31 \
   --output-dir ./data
 ```
+
+**Preview data (no API key required):**
+```bash
+aperiodic ohlcv --preview \
+  --exchange binance-futures \
+  --symbol perpetual-BTC-USDT:USDT \
+  --interval 5m \
+  --start-date 2025-05-01 \
+  --end-date 2025-05-31 \
+  --output-dir ./data
+```
+
+## Preview data
+
+`--preview` fetches a free, curated slice of data from the preview endpoint — no subscription and no API key required (the shared public demo key is used automatically). Requests must match one of the whitelisted parameter combinations (exchange, symbol, interval, timestamp, date range) listed at [aperiodic.io/catalog](https://aperiodic.io/catalog#preview).
 
 ## Supported Exchanges
 

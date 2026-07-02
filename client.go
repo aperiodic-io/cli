@@ -13,6 +13,10 @@ import (
 const (
 	DefaultBaseURL = "https://aperiodic.io/api/v1"
 	DefaultTimeout = 60 * time.Second
+
+	// DemoAPIKey is the shared public demo key. Preview data is served against
+	// it, so users can query the whitelisted preview slice without signing up.
+	DemoAPIKey = "DEMO-KEY"
 )
 
 type APIError struct {
@@ -130,8 +134,13 @@ func (c *AperiodicClient) GetSymbols(exchange string) ([]string, error) {
 	return symResp.Symbols, nil
 }
 
-func (c *AperiodicClient) FetchPresignedUrls(bucket string, timestamp TimestampType, interval Interval, exchange string, symbol string, startDate string, endDate string) (*AggregateDataResponse, error) {
-	u, err := url.Parse(fmt.Sprintf("%s/data/%s", c.BaseURL, bucket))
+func (c *AperiodicClient) FetchPresignedUrls(bucket string, timestamp TimestampType, interval Interval, exchange string, symbol string, startDate string, endDate string, preview bool) (*AggregateDataResponse, error) {
+	dataPath := fmt.Sprintf("%s/data/%s", c.BaseURL, bucket)
+	if preview {
+		dataPath = fmt.Sprintf("%s/data/preview/%s", c.BaseURL, bucket)
+	}
+
+	u, err := url.Parse(dataPath)
 	if err != nil {
 		return nil, err
 	}
