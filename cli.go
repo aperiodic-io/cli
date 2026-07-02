@@ -33,14 +33,6 @@ func (c *CLI) Run(args []string) int {
 		return 0
 	}
 
-	apiKey := c.Env("APERIODIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set")
-		return 1
-	}
-
-	client := NewAperiodicClient(apiKey)
-
 	fs := flag.NewFlagSet("aperiodic", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
@@ -52,10 +44,24 @@ func (c *CLI) Run(args []string) int {
 	maxConcurrentFlag := fs.Int("max-concurrent", 10, "Maximum concurrent downloads")
 	timestampFlag := fs.String("timestamp", "exchange", "Timestamp source (exchange, true)")
 	outputDirFlag := fs.String("output-dir", "", "Output directory for Parquet files (mandatory)")
+	previewFlag := fs.Bool("preview", false, "Query the free preview dataset (no subscription; whitelisted parameters only)")
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
+
+	apiKey := c.Env("APERIODIC_API_KEY")
+	if apiKey == "" {
+		if *previewFlag {
+			// Preview data is served against the shared demo key, so no key is required.
+			apiKey = DemoAPIKey
+		} else {
+			fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set (pass --preview to use the shared demo key)")
+			return 1
+		}
+	}
+
+	client := NewAperiodicClient(apiKey)
 
 	if cmd == "symbols" {
 		return c.handleSymbols(client, *exchangeFlag)
@@ -66,7 +72,7 @@ func (c *CLI) Run(args []string) int {
 		return 1
 	}
 
-	return c.handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *outputDirFlag)
+	return c.handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *outputDirFlag, *previewFlag)
 }
 
 func (c *CLI) printUsage() {
@@ -102,7 +108,7 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "  help     Show this help")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Environment:")
-	fmt.Fprintln(c.Stdout, "  APERIODIC_API_KEY  Aperiodic API key (required)")
+	fmt.Fprintln(c.Stdout, "  APERIODIC_API_KEY  Aperiodic API key (required, except with --preview)")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Flags:")
 	fmt.Fprintln(c.Stdout, "  -end-date string")
@@ -115,6 +121,8 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "        Maximum concurrent downloads (default 10)")
 	fmt.Fprintln(c.Stdout, "  -output-dir string")
 	fmt.Fprintln(c.Stdout, "        Output directory for Parquet files (mandatory)")
+	fmt.Fprintln(c.Stdout, "  -preview")
+	fmt.Fprintln(c.Stdout, "        Query the free preview dataset (no subscription; whitelisted parameters only)")
 	fmt.Fprintln(c.Stdout, "  -start-date string")
 	fmt.Fprintln(c.Stdout, "        Start date (YYYY-MM-DD)")
 	fmt.Fprintln(c.Stdout, "  -symbol string")
@@ -137,7 +145,7 @@ func (c *CLI) handleSymbols(client *AperiodicClient, exchange string) int {
 	return 0
 }
 
-func (c *CLI) handleData(client *AperiodicClient, metric, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, outputDir string) int {
+func (c *CLI) handleData(client *AperiodicClient, metric, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, outputDir string, preview bool) int {
 	if symbol == "" {
 		fmt.Fprintln(c.Stderr, "Error: --symbol is required")
 		return 1
@@ -147,7 +155,7 @@ func (c *CLI) handleData(client *AperiodicClient, metric, timestamp, interval, e
 		return 1
 	}
 
-	resp, err := client.FetchPresignedUrls(metric, TimestampType(timestamp), Interval(interval), exchange, symbol, startDate, endDate)
+	resp, err := client.FetchPresignedUrls(metric, TimestampType(timestamp), Interval(interval), exchange, symbol, startDate, endDate, preview)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "Error fetching file URLs: %v\n", err)
 		return 1

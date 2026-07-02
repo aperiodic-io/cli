@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,6 +125,82 @@ func TestCLI_MetricMissingOutputDir(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "output-dir") {
 		t.Errorf("expected error about output-dir, got: %s", stderr)
+	}
+}
+
+// captureCLIRequest runs the CLI against a stub server and reports the request
+// path and X-API-KEY header it received. --output-dir is appended for the
+// caller. APERIODIC_API_KEY is set to apiKeyEnv (use "" for an unset key).
+func captureCLIRequest(t *testing.T, apiKeyEnv string, args ...string) (path, key string, exitCode int, stderr string) {
+	t.Helper()
+
+	var gotPath, gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotKey = r.Header.Get("X-API-KEY")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"files": []}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("APERIODIC_API_URL", srv.URL)
+	t.Setenv("APERIODIC_API_KEY", apiKeyEnv)
+
+	fullArgs := append(args, "-output-dir", t.TempDir())
+	_, errStr, code := runCLI(fullArgs...)
+	return gotPath, gotKey, code, errStr
+}
+
+var previewArgs = []string{
+	"ohlcv", "-preview",
+	"-exchange", "binance-futures",
+	"-symbol", "perpetual-BTC-USDT:USDT",
+	"-interval", "5m",
+	"-start-date", "2025-05-01",
+	"-end-date", "2025-05-31",
+}
+
+func TestCLI_Preview_NoAPIKeyUsesDemoKey(t *testing.T) {
+	path, key, code, stderr := captureCLIRequest(t, "", previewArgs...)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if key != DemoAPIKey {
+		t.Errorf("expected X-API-KEY %q, got %q", DemoAPIKey, key)
+	}
+	if path != "/data/preview/ohlcv" {
+		t.Errorf("expected preview path, got %q", path)
+	}
+}
+
+func TestCLI_Preview_KeepsProvidedAPIKey(t *testing.T) {
+	path, key, code, stderr := captureCLIRequest(t, "real-key", previewArgs...)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if key != "real-key" {
+		t.Errorf("expected provided key to be used, got %q", key)
+	}
+	if path != "/data/preview/ohlcv" {
+		t.Errorf("expected preview path, got %q", path)
+	}
+}
+
+func TestCLI_NoPreviewUsesDataPath(t *testing.T) {
+	args := []string{
+		"ohlcv",
+		"-exchange", "binance-futures",
+		"-symbol", "perpetual-BTC-USDT:USDT",
+		"-interval", "5m",
+		"-start-date", "2025-05-01",
+		"-end-date", "2025-05-31",
+	}
+	path, _, code, stderr := captureCLIRequest(t, "real-key", args...)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if path != "/data/ohlcv" {
+		t.Errorf("expected non-preview path, got %q", path)
 	}
 }
 
