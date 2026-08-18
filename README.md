@@ -177,7 +177,17 @@ aperiodic ohlcv --preview \
 
 ## Output
 
-All data commands download **Parquet files** to `--output-dir`. Files are fetched concurrently (tunable via `--max-concurrent`) and named by year and month.
+All data commands download **Parquet files** to `--output-dir`, fetched concurrently (tunable via `--max-concurrent`).
+
+History up to **2026-07-31** is one file per month; from **2026-08-01** onwards it is one file per day. You always ask for a date range and get back every file covering it, so a range spanning the changeover downloads the earlier months as monthly files followed by a daily file per day.
+
+Filenames follow the granularity, zero-padded so a directory listing sorts chronologically:
+
+```
+2026-07.parquet      # monthly
+2026-08-01.parquet   # daily
+2026-08-02.parquet
+```
 
 ## Build from Source
 
