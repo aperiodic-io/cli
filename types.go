@@ -23,9 +23,9 @@ const (
 type Exchange string
 
 const (
-	ExchangeBinanceFutures    Exchange = "binance-futures"
-	ExchangeOkxPerps          Exchange = "okx-perps"
-	ExchangeHyperliquidPerps  Exchange = "hyperliquid-perps"
+	ExchangeBinanceFutures   Exchange = "binance-futures"
+	ExchangeOkxPerps         Exchange = "okx-perps"
+	ExchangeHyperliquidPerps Exchange = "hyperliquid-perps"
 )
 
 type TradeMetric string
@@ -70,6 +70,12 @@ type FileInfo struct {
 	Year  int    `json:"year"`
 	Month int    `json:"month"`
 	URL   string `json:"url"`
+
+	// Day is set only on daily files, which cover 2026-08-01 onwards; monthly
+	// files omit the field. A pointer rather than a plain int so an absent day
+	// stays distinguishable from a literal 0 — reading a stray 0 as "monthly"
+	// would collide with the month's real monthly file.
+	Day *int `json:"day,omitempty"`
 }
 
 type AggregateDataResponse struct {
