@@ -83,12 +83,93 @@ type AggregateDataResponse struct {
 }
 
 type APIErrorResponse struct {
-	Error   string   `json:"error"`
-	Details []string `json:"details"`
+	Error      string   `json:"error"`
+	Details    []string `json:"details"`
+	Code       string   `json:"code"`
+	UpgradeURL string   `json:"upgrade_url"`
 }
 
 type SymbolsResponse struct {
 	Symbols  []string `json:"symbols"`
 	Exchange string   `json:"exchange"`
 	Bucket   string   `json:"bucket"`
+}
+
+// RawDataset is a raw per-tick dataset (Prime + Raw plan).
+type RawDataset string
+
+const (
+	RawTrades       RawDataset = "trades"
+	RawQuotes       RawDataset = "quotes"
+	RawMarkPrice    RawDataset = "mark_price"
+	RawIndexPrice   RawDataset = "index_price"
+	RawFundingRate  RawDataset = "funding_rate"
+	RawOpenInterest RawDataset = "open_interest"
+)
+
+type RawFileInfo struct {
+	// Period is "YYYY-MM" for a monthly file, "YYYY-MM-DD" for a daily one.
+	Period string `json:"period"`
+	URL    string `json:"url"`
+	Size   int64  `json:"size"`
+}
+
+type RawFilesResponse struct {
+	Dataset        string        `json:"dataset"`
+	Exchange       string        `json:"exchange"`
+	Symbol         string        `json:"symbol"`
+	SchemaVersion  int           `json:"schema_version"`
+	ExpiresIn      int           `json:"expires_in"`
+	Files          []RawFileInfo `json:"files"`
+	MissingPeriods []string      `json:"missing_periods"`
+}
+
+type RawColumn struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Nullable    bool   `json:"nullable"`
+	Description string `json:"description"`
+}
+
+type RawDatasetInfo struct {
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Exchanges   []string    `json:"exchanges"`
+	Columns     []RawColumn `json:"columns"`
+}
+
+// RawCoverageSeries is one symbol's coverage within a dataset and exchange.
+type RawCoverageSeries struct {
+	First   string   `json:"first"`
+	Last    string   `json:"last"`
+	Days    int      `json:"days"`
+	Missing []string `json:"missing"`
+	Bytes   int64    `json:"bytes"`
+}
+
+// RawCoverageSummary is one row per dataset and exchange.
+type RawCoverageSummary struct {
+	Dataset  string `json:"dataset"`
+	Exchange string `json:"exchange"`
+	Symbols  int    `json:"symbols"`
+	First    string `json:"first"`
+	Last     string `json:"last"`
+	Bytes    int64  `json:"bytes"`
+}
+
+type RawCoverageResponse struct {
+	SchemaVersion  int    `json:"schema_version"`
+	DailyFilesFrom string `json:"daily_files_from"`
+	Preview        struct {
+		Period  string            `json:"period"`
+		Symbols map[string]string `json:"symbols"`
+	} `json:"preview"`
+	Datasets []RawDatasetInfo     `json:"datasets"`
+	Summary  []RawCoverageSummary `json:"summary"`
+	Coverage struct {
+		GeneratedAt string `json:"generated_at"`
+		// Dataset → exchange → symbol.
+		Datasets map[string]map[string]map[string]RawCoverageSeries `json:"datasets"`
+	} `json:"coverage"`
 }
