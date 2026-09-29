@@ -23,6 +23,12 @@ type APIError struct {
 	StatusCode int
 	Message    string
 	Details    []string
+
+	// Code is the machine-readable reason some responses carry, e.g.
+	// "raw_not_in_plan" or "range_too_long" on raw data requests.
+	Code string
+	// UpgradeURL accompanies a "raw_not_in_plan" refusal.
+	UpgradeURL string
 }
 
 func (e *APIError) Error() string {
@@ -77,7 +83,17 @@ func (c *AperiodicClient) handleAPIError(resp *http.Response) error {
 	case http.StatusUnauthorized:
 		apiErr.Message = "Unauthorized"
 	case http.StatusForbidden:
+		// A 403 can carry a reason (e.g. raw_not_in_plan); keep it.
 		apiErr.Message = "Forbidden"
+		var errResp APIErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+			if errResp.Error != "" {
+				apiErr.Message = errResp.Error
+			}
+			apiErr.Details = errResp.Details
+			apiErr.Code = errResp.Code
+			apiErr.UpgradeURL = errResp.UpgradeURL
+		}
 	case http.StatusNotFound:
 		apiErr.Message = "Not Found"
 	case http.StatusTooManyRequests:
@@ -87,6 +103,8 @@ func (c *AperiodicClient) handleAPIError(resp *http.Response) error {
 		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
 			apiErr.Message = errResp.Error
 			apiErr.Details = errResp.Details
+			apiErr.Code = errResp.Code
+			apiErr.UpgradeURL = errResp.UpgradeURL
 		} else {
 			body, _ := io.ReadAll(resp.Body)
 			apiErr.Message = string(body)

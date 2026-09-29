@@ -70,42 +70,62 @@ func (c *AperiodicClient) DownloadFilesConcurrently(files []FileInfo, maxConcurr
 	}
 
 	results := make([]DownloadedFile, len(files))
-	errs := make([]error, len(files))
+	err = runConcurrently(len(files), maxConcurrent, func(i int) error {
+		f := files[i]
+		filename := filenames[i]
+		destPath := filepath.Join(outputDir, filename)
+
+		if err := c.downloadToFile(f.URL, destPath, 3); err != nil {
+			return fmt.Errorf("failed to download %s: %w", filename, err)
+		}
+		results[i] = DownloadedFile{
+			Year:     f.Year,
+			Month:    f.Month,
+			Day:      f.Day,
+			Filename: filename,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+// runConcurrently calls task for every index in [0, n), at most maxConcurrent
+// at a time, and once all have finished returns the error of the lowest index
+// that failed. A maxConcurrent below 1 runs one at a time: an unbuffered
+// semaphore would block every task forever.
+func runConcurrently(n, maxConcurrent int, task func(i int) error) error {
+	if maxConcurrent < 1 {
+		maxConcurrent = 1
+	}
+
+	errs := make([]error, n)
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, maxConcurrent)
 
-	for i, file := range files {
+	for i := 0; i < n; i++ {
 		wg.Add(1)
-		go func(i int, f FileInfo) {
+		go func(i int) {
 			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			filename := filenames[i]
-			destPath := filepath.Join(outputDir, filename)
-
-			if err := c.downloadToFile(f.URL, destPath, 3); err != nil {
-				errs[i] = fmt.Errorf("failed to download %s: %w", filename, err)
-				return
-			}
-			results[i] = DownloadedFile{
-				Year:     f.Year,
-				Month:    f.Month,
-				Day:      f.Day,
-				Filename: filename,
-			}
-		}(i, file)
+			errs[i] = task(i)
+		}(i)
 	}
 
 	wg.Wait()
 
 	for _, err := range errs {
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return results, nil
+	return nil
 }
 
 func (c *AperiodicClient) downloadToFile(url, destPath string, maxRetries int) error {

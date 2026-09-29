@@ -28,9 +28,13 @@ func (c *CLI) Run(args []string) int {
 	}
 
 	cmd := args[0]
-	if cmd == "help" || cmd == "-h" || cmd == "--help" {
+	if isHelpArg(cmd) {
 		c.printUsage()
 		return 0
+	}
+
+	if cmd == "raw" {
+		return c.runRaw(args[1:])
 	}
 
 	fs := flag.NewFlagSet("aperiodic", flag.ContinueOnError)
@@ -50,15 +54,9 @@ func (c *CLI) Run(args []string) int {
 		return 2
 	}
 
-	apiKey := c.Env("APERIODIC_API_KEY")
-	if apiKey == "" {
-		if *previewFlag {
-			// Preview data is served against the shared demo key, so no key is required.
-			apiKey = DemoAPIKey
-		} else {
-			fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set (pass --preview to use the shared demo key)")
-			return 1
-		}
+	apiKey, ok := c.resolveAPIKey(*previewFlag)
+	if !ok {
+		return 1
 	}
 
 	client := NewAperiodicClient(apiKey)
@@ -75,12 +73,32 @@ func (c *CLI) Run(args []string) int {
 	return c.handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *outputDirFlag, *previewFlag)
 }
 
+func isHelpArg(arg string) bool {
+	return arg == "help" || arg == "-h" || arg == "--help"
+}
+
+// resolveAPIKey returns APERIODIC_API_KEY or, for a preview request without
+// one, the shared demo key. It reports the missing key itself.
+func (c *CLI) resolveAPIKey(preview bool) (string, bool) {
+	if apiKey := c.Env("APERIODIC_API_KEY"); apiKey != "" {
+		return apiKey, true
+	}
+	if preview {
+		// Preview data is served against the shared demo key, so no key is required.
+		return DemoAPIKey, true
+	}
+	fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set (pass --preview to use the shared demo key)")
+	return "", false
+}
+
 func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "Aperiodic CLI Client")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Usage:")
 	fmt.Fprintln(c.Stdout, "  aperiodic <metric> [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic symbols [flags]")
+	fmt.Fprintln(c.Stdout, "  aperiodic raw <dataset> [flags]")
+	fmt.Fprintln(c.Stdout, "  aperiodic raw coverage [flags]")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Metrics:")
 	fmt.Fprintln(c.Stdout, "  ohlcv             OHLCV (open/high/low/close/volume)")
@@ -105,6 +123,7 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Commands:")
 	fmt.Fprintln(c.Stdout, "  symbols  List available symbols for an exchange")
+	fmt.Fprintln(c.Stdout, "  raw      Download raw trades, quotes and derivative ticks (Prime + Raw plan; see 'aperiodic raw help')")
 	fmt.Fprintln(c.Stdout, "  help     Show this help")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Environment:")

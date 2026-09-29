@@ -44,14 +44,18 @@ Get your API key at [aperiodic.io](https://aperiodic.io).
 
 For [preview data](#preview-data) (`--preview`), no API key is required — the CLI uses the shared public demo key automatically.
 
+[Raw data](#raw-data) needs a key on the Prime + Raw plan; `aperiodic raw coverage` and `aperiodic raw --preview` work without one.
+
 ## Usage
 
 ```
 aperiodic <metric> [flags]
 aperiodic symbols [flags]
+aperiodic raw <dataset> [flags]
+aperiodic raw coverage [flags]
 ```
 
-The first argument is the metric name. Use `symbols` to list available symbols for an exchange.
+The first argument is the metric name. Use `symbols` to list available symbols for an exchange, and `raw` for [raw data](#raw-data).
 
 ## Available Metrics
 
@@ -177,7 +181,7 @@ aperiodic ohlcv --preview \
 
 ## Output
 
-All data commands download **Parquet files** to `--output-dir`, fetched concurrently (tunable via `--max-concurrent`).
+All metric commands download **Parquet files** to `--output-dir`, fetched concurrently (tunable via `--max-concurrent`). Raw data uses its own [file layout](#raw-file-layout).
 
 History up to **2026-07-31** is one file per month; from **2026-08-01** onwards it is one file per day. You always ask for a date range and get back every file covering it, so a range spanning the changeover downloads the earlier months as monthly files followed by a daily file per day.
 
@@ -187,6 +191,82 @@ Filenames follow the granularity, zero-padded so a directory listing sorts chron
 2026-07.parquet      # monthly
 2026-08-01.parquet   # daily
 2026-08-02.parquet
+```
+
+## Raw data
+
+Raw trades, top-of-book quotes and derivative ticks for Binance, OKX and Hyperliquid perpetuals: the data the metrics are built from. Raw data needs the **Prime + Raw** plan ([pricing](https://aperiodic.io/pricing)); it uses the same API key and symbols as the metrics. To try it without an account, use [`--preview`](#raw-preview).
+
+| Dataset         | Contents                                     | `binance-futures` | `okx-perps` | `hyperliquid-perps` |
+|-----------------|----------------------------------------------|:-----------------:|:-----------:|:-------------------:|
+| `trades`        | Every trade: id, taker side, price, amount   | yes               | yes         | yes                 |
+| `quotes`        | Top of book: best bid/ask price and amount   | yes               | yes         | yes                 |
+| `mark_price`    | Mark price, one row per change               | yes               | yes         | —                   |
+| `index_price`   | Index price, one row per change              | yes               | yes         | —                   |
+| `funding_rate`  | Funding rate and next funding time           | yes               | yes         | —                   |
+| `open_interest` | Open interest, one row per change            | yes               | yes         | —                   |
+
+Hyperliquid serves `trades` and `quotes` only; the CLI rejects the other combinations before calling the API. Raw L2 order books are not offered.
+
+Every file starts with `exchange_timestamp` (the venue's time), `local_timestamp` (when the event reached the capture machine) and `local_timestamp_kind`: `"measured"`, or `"modelled"` for days before the feed was captured directly, where the local time is the exchange time plus a latency drawn from the measured distribution. Don't use modelled days for latency research. Timestamps are UTC.
+
+**Download a year of trades:**
+```bash
+aperiodic raw trades \
+  --exchange binance-futures \
+  --symbol perpetual-BTC-USDT:USDT \
+  --start-date 2025-01-01 \
+  --end-date 2025-12-31 \
+  --output-dir ./raw
+```
+
+**List what is available (no API key needed):**
+```bash
+aperiodic raw coverage                                           # one row per dataset and exchange
+aperiodic raw coverage --dataset quotes --exchange okx-perps     # every symbol: first/last day, days, size
+aperiodic raw coverage --symbol perpetual-BTC-USDT:USDT          # one symbol across datasets
+```
+
+### Raw flags
+
+| Flag               | Default           | Description                                                                 |
+|--------------------|-------------------|-----------------------------------------------------------------------------|
+| `--exchange`       | `binance-futures` | Exchange name                                                               |
+| `--symbol`         |                   | Trading pair symbol (Atlas unified symbology)                               |
+| `--start-date`     |                   | First day, UTC (`YYYY-MM-DD`)                                               |
+| `--end-date`       |                   | Last day, inclusive (`YYYY-MM-DD`); ranges over 366 days are split into several requests for you |
+| `--output-dir`     |                   | Root folder for the file layout below (required)                            |
+| `--max-concurrent` | `4`               | Maximum concurrent downloads                                                |
+| `--overwrite`      | `false`           | Download files again even if already present with the expected size        |
+| `--preview`        | `false`           | Fetch the free preview file with the shared demo key (dates are ignored)    |
+
+`aperiodic raw coverage` takes `--dataset`, `--exchange` and `--symbol` as filters; with none it prints the summary.
+
+### Raw file layout
+
+Files land in the bucket's own Hive layout, the same one the Python client's `download_raw` writes, so either can top up a folder the other started. History before **2026-08-01** is one file per month; from then on it is one file per day:
+
+```
+raw/trades/exchange=binance-futures/symbol=perpetual-BTC-USDT:USDT/year=2025/month=06/data.parquet          # monthly
+raw/trades/exchange=binance-futures/symbol=perpetual-BTC-USDT:USDT/year=2026/month=08/day=01/data.parquet   # daily
+```
+
+On Windows, `:` is not allowed in file names, so it is written as `%3A`, which Hive-partition readers decode back.
+
+- Monthly files are written whole, so they can reach past the requested range: filter on `exchange_timestamp` when reading. Monthly and daily files sit at different depths, so read a folder with a recursive glob, e.g. `pl.scan_parquet("raw/trades/**/data.parquet")`.
+- A file already on disk with the expected size is skipped, so running the same command again resumes an interrupted download. Each file is streamed to `data.parquet.part` and renamed once complete.
+- Download URLs are valid for one hour; one that has expired is re-requested automatically.
+- A key whose plan lacks raw data gets a `raw_not_in_plan` error with the link to upgrade.
+
+### Raw preview
+
+`--preview` needs no account and no API key (the shared public demo key is used automatically). It returns the **2025-06** file of each venue's BTC perpetual: `perpetual-BTC-USDT:USDT` on `binance-futures` and `okx-perps`, `perpetual-BTC-USDC:USDC` on `hyperliquid-perps`, for any dataset the venue serves. `--start-date` and `--end-date` are not needed.
+
+```bash
+aperiodic raw quotes --preview \
+  --exchange okx-perps \
+  --symbol perpetual-BTC-USDT:USDT \
+  --output-dir ./raw
 ```
 
 ## Build from Source
