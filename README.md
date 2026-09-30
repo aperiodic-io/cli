@@ -177,7 +177,9 @@ aperiodic ohlcv --preview \
 
 ## Intervals
 
-`1s`, `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`
+`15s`, `30s`, `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`
+
+`15s` and `30s` need a Tier 3 subscription and are not available for the derivative metrics.
 
 ## Output
 
