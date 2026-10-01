@@ -64,7 +64,7 @@ func TestCLI_OHLCV_HyperliquidPerps_Download(t *testing.T) {
 }
 
 func TestCLI_VTWAP_InvalidAPIKey(t *testing.T) {
-	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	useLiveAPI(t)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	outputDir := t.TempDir()
