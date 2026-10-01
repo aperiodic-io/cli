@@ -2,9 +2,8 @@ package aperiodic
 
 // Raw data against the live API (production, or APERIODIC_API_URL): what a
 // user running the CLI gets. The files are the June 2025 BTC perpetuals, in
-// the raw buckets since the proof of concept. The paid download skips unless
-// APERIODIC_RAW_API_KEY holds a Prime + Raw key; CI requires one when it runs
-// against staging before a release.
+// the raw buckets since the proof of concept. The paid download needs
+// APERIODIC_API_KEY to be on the Prime + Raw plan.
 
 import (
 	"bytes"
@@ -15,17 +14,6 @@ import (
 )
 
 var isoDay = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-
-func requireRawAPIKey(t *testing.T) {
-	t.Helper()
-
-	apiKey := os.Getenv("APERIODIC_RAW_API_KEY")
-	if apiKey == "" {
-		t.Skip("APERIODIC_RAW_API_KEY (a Prime + Raw key) is not set")
-	}
-	useLiveAPI(t)
-	t.Setenv("APERIODIC_API_KEY", apiKey)
-}
 
 // requireJuneParquet checks the June 2025 file landed where RawFilePath says,
 // and is Parquet rather than a storage error page.
@@ -132,7 +120,7 @@ func TestCLI_Raw_Live_DemoKeyIsRefusedOutsideThePreview(t *testing.T) {
 // Downloads the whole June trades file (a few hundred MB): the size raw users
 // stream, which the small preview file above does not exercise.
 func TestCLI_Raw_Live_DownloadsAndThenSkipsTheJuneFile(t *testing.T) {
-	requireRawAPIKey(t)
+	requireAPIKey(t)
 
 	outputDir := t.TempDir()
 	args := []string{

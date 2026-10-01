@@ -31,19 +31,18 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: '1.24'
-    # A missing staging key would fall back to the production one, and a missing
-    # raw key would skip the raw download test: neither may pass a release.
+    # A missing staging secret would fall back to production or fail every
+    # request at Cloudflare Access; say which one instead.
     - name: Require the staging secrets
       if: inputs.base_url
       shell: bash
       env:
         APERIODIC_STAGING_API_KEY: ${{ secrets.APERIODIC_STAGING_API_KEY }}
-        APERIODIC_STAGING_RAW_API_KEY: ${{ secrets.APERIODIC_STAGING_RAW_API_KEY }}
         CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       run: |
         missing=0
-        for name in APERIODIC_STAGING_API_KEY APERIODIC_STAGING_RAW_API_KEY CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET; do
+        for name in APERIODIC_STAGING_API_KEY CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET; do
           if [ -z "${!name}" ]; then
             echo "::error::The $name secret is not set"
             missing=1
@@ -53,9 +52,8 @@ jobs:
     - name: Test
       env:
         # Push and PR runs test production. A dispatch with a base_url tests
-        # that API (staging) with its keys.
+        # that API (staging) with its key. Either key must be on Prime + Raw.
         APERIODIC_API_KEY: ${{ inputs.base_url && secrets.APERIODIC_STAGING_API_KEY || secrets.APERIODIC_API_KEY }}
-        APERIODIC_RAW_API_KEY: ${{ inputs.base_url && secrets.APERIODIC_STAGING_RAW_API_KEY || secrets.APERIODIC_RAW_API_KEY }}
         APERIODIC_API_URL: ${{ inputs.base_url || '' }}
         CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
