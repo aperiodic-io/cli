@@ -7,6 +7,14 @@ on:
       - 'v*'
   pull_request:
     branches: [ main ]
+  # Dispatched by unravel-router's bump workflow, which tests the CLI against
+  # staging before every aperiodic.io release.
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'API base URL to test against (empty: production)'
+        required: false
+        default: ''
 
 jobs:
   test:
@@ -23,9 +31,34 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: '1.24'
+    # A missing staging key would fall back to the production one, and a missing
+    # raw key would skip the raw download test: neither may pass a release.
+    - name: Require the staging secrets
+      if: inputs.base_url
+      shell: bash
+      env:
+        APERIODIC_STAGING_API_KEY: ${{ secrets.APERIODIC_STAGING_API_KEY }}
+        APERIODIC_STAGING_RAW_API_KEY: ${{ secrets.APERIODIC_STAGING_RAW_API_KEY }}
+        CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      run: |
+        missing=0
+        for name in APERIODIC_STAGING_API_KEY APERIODIC_STAGING_RAW_API_KEY CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET; do
+          if [ -z "${!name}" ]; then
+            echo "::error::The $name secret is not set"
+            missing=1
+          fi
+        done
+        exit $missing
     - name: Test
       env:
-        APERIODIC_API_KEY: ${{ secrets.APERIODIC_API_KEY }}
+        # Push and PR runs test production. A dispatch with a base_url tests
+        # that API (staging) with its keys.
+        APERIODIC_API_KEY: ${{ inputs.base_url && secrets.APERIODIC_STAGING_API_KEY || secrets.APERIODIC_API_KEY }}
+        APERIODIC_RAW_API_KEY: ${{ inputs.base_url && secrets.APERIODIC_STAGING_RAW_API_KEY || secrets.APERIODIC_RAW_API_KEY }}
+        APERIODIC_API_URL: ${{ inputs.base_url || '' }}
+        CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+        CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       run: go test -v ./...
 
   build:

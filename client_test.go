@@ -2,6 +2,7 @@ package aperiodic
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,10 +21,16 @@ func requireAPIKey(t *testing.T) string {
 		t.Fatal("APERIODIC_API_KEY environment variable not set")
 	}
 
-	// Force production base URL for all integration tests
-	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	useLiveAPI(t)
 
 	return apiKey
+}
+
+// useLiveAPI points a test at the live API: production, unless
+// APERIODIC_API_URL names another (CI sets staging before a release).
+func useLiveAPI(t *testing.T) {
+	t.Helper()
+	t.Setenv("APERIODIC_API_URL", cmp.Or(os.Getenv("APERIODIC_API_URL"), DefaultBaseURL))
 }
 
 func TestHandleAPIError(t *testing.T) {
@@ -208,7 +215,7 @@ func TestCLI_NoPreviewUsesDataPath(t *testing.T) {
 // where invalid-key tests run unconditionally and assert specific error codes.
 
 func TestCLI_Symbols_InvalidAPIKey(t *testing.T) {
-	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	useLiveAPI(t)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	_, stderr, code := runCLI("symbols", "-exchange", "binance-futures")
@@ -218,7 +225,7 @@ func TestCLI_Symbols_InvalidAPIKey(t *testing.T) {
 }
 
 func TestCLI_Symbols_HyperliquidPerps_InvalidAPIKey(t *testing.T) {
-	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	useLiveAPI(t)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	_, stderr, code := runCLI("symbols", "-exchange", "hyperliquid-perps")
@@ -228,7 +235,7 @@ func TestCLI_Symbols_HyperliquidPerps_InvalidAPIKey(t *testing.T) {
 }
 
 func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
-	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	useLiveAPI(t)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	outputDir := t.TempDir()
@@ -247,7 +254,7 @@ func TestCLI_OHLCV_InvalidAPIKey(t *testing.T) {
 }
 
 func TestCLI_OHLCV_HyperliquidPerps_InvalidAPIKey(t *testing.T) {
-	t.Setenv("APERIODIC_API_URL", DefaultBaseURL)
+	useLiveAPI(t)
 	t.Setenv("APERIODIC_API_KEY", "invalid-key")
 
 	outputDir := t.TempDir()
