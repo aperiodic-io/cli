@@ -203,12 +203,12 @@ Raw trades, top-of-book quotes and derivative ticks for Binance, OKX and Hyperli
 |-----------------|----------------------------------------------|:-----------------:|:-----------:|:-------------------:|
 | `trades`        | Every trade: id, taker side, price, amount   | yes               | yes         | yes                 |
 | `quotes`        | Top of book: best bid/ask price and amount   | yes               | yes         | yes                 |
-| `mark_price`    | Mark price, one row per change               | yes               | yes         | —                   |
-| `index_price`   | Index price, one row per change              | yes               | yes         | —                   |
-| `funding_rate`  | Funding rate and next funding time           | yes               | yes         | —                   |
-| `open_interest` | Open interest, one row per change            | yes               | yes         | —                   |
+| `mark_price`    | Mark price, one row per change               | yes               | yes         | yes                 |
+| `index_price`   | Index price, one row per change              | yes               | yes         | yes                 |
+| `funding_rate`  | Funding rate and next funding time           | yes               | yes         | yes                 |
+| `open_interest` | Open interest, one row per change            | yes               | yes         | yes                 |
 
-Hyperliquid serves `trades` and `quotes` only; the CLI rejects the other combinations before calling the API. Raw L2 order books are not offered.
+Hyperliquid's derivative feed carries no exchange time, so in its `mark_price`, `index_price`, `funding_rate` and `open_interest` files `exchange_timestamp` is modelled, and an `exchange_timestamp_kind` column (`"modelled"`) follows it. Raw L2 order books are not offered.
 
 Every file starts with `exchange_timestamp` (the venue's time), `local_timestamp` (when the event reached the capture machine) and `local_timestamp_kind`: `"measured"`, or `"modelled"` for days before the feed was captured directly, where the local time is the exchange time plus a latency drawn from the measured distribution. Don't use modelled days for latency research. Timestamps are UTC.
 

@@ -313,23 +313,13 @@ func TestRawFilePath(t *testing.T) {
 }
 
 func TestValidateRawQuery(t *testing.T) {
+	// The API serves every raw dataset on every exchange, Hyperliquid's
+	// derivative datasets included (with a modelled exchange_timestamp).
 	for _, dataset := range RawDatasets {
-		for _, exchange := range []Exchange{ExchangeBinanceFutures, ExchangeOkxPerps} {
+		for _, exchange := range Exchanges {
 			if err := ValidateRawQuery(dataset, exchange); err != nil {
 				t.Errorf("%s on %s: unexpected error: %v", dataset, exchange, err)
 			}
-		}
-	}
-
-	for _, dataset := range []RawDataset{RawTrades, RawQuotes} {
-		if err := ValidateRawQuery(dataset, ExchangeHyperliquidPerps); err != nil {
-			t.Errorf("%s on hyperliquid-perps: unexpected error: %v", dataset, err)
-		}
-	}
-	for _, dataset := range []RawDataset{RawMarkPrice, RawIndexPrice, RawFundingRate, RawOpenInterest} {
-		err := ValidateRawQuery(dataset, ExchangeHyperliquidPerps)
-		if err == nil || !strings.Contains(err.Error(), "binance-futures, okx-perps") {
-			t.Errorf("%s on hyperliquid-perps: expected an error naming the available exchanges, got %v", dataset, err)
 		}
 	}
 
@@ -718,7 +708,6 @@ func TestCLI_Raw_ValidatesBeforeCallingTheAPI(t *testing.T) {
 		{"no dataset", []string{"raw", "--symbol", rawTestSymbol, "--output-dir", outputDir}, "raw dataset is required"},
 		{"unknown dataset", append([]string{"raw", "book", "--symbol", rawTestSymbol, "--output-dir", outputDir}, dates...), `unknown raw dataset "book"`},
 		{"unknown exchange", append([]string{"raw", "trades", "--exchange", "bybit", "--symbol", rawTestSymbol, "--output-dir", outputDir}, dates...), `unknown exchange "bybit"`},
-		{"derivative on hyperliquid", append([]string{"raw", "funding_rate", "--exchange", "hyperliquid-perps", "--symbol", "perpetual-BTC-USDC:USDC", "--output-dir", outputDir}, dates...), "trades and quotes only"},
 		{"missing symbol", append([]string{"raw", "trades", "--output-dir", outputDir}, dates...), "--symbol is required"},
 		{"missing output dir", append([]string{"raw", "trades", "--symbol", rawTestSymbol}, dates...), "--output-dir is mandatory"},
 		{"missing dates", rawArgs(outputDir), "--start-date and --end-date are required"},
@@ -887,7 +876,6 @@ func TestCLI_RawCoverage_RejectsUnknownFilters(t *testing.T) {
 	for _, args := range [][]string{
 		{"raw", "coverage", "--dataset", "book"},
 		{"raw", "coverage", "--exchange", "bybit"},
-		{"raw", "coverage", "--dataset", "open_interest", "--exchange", "hyperliquid-perps"},
 		{"raw", "coverage", "trades"},
 	} {
 		if _, _, code := runCLI(args...); code != 1 {
