@@ -48,10 +48,6 @@ var (
 	// Exchanges lists every supported exchange.
 	Exchanges = []Exchange{ExchangeBinanceFutures, ExchangeOkxPerps, ExchangeHyperliquidPerps}
 
-	// Hyperliquid's derivative feed carries no exchange time, so the four
-	// derivative datasets are not served for it.
-	rawDerivativeExchanges = []Exchange{ExchangeBinanceFutures, ExchangeOkxPerps}
-
 	// rawStallTimeout aborts a transfer that receives nothing for this long.
 	// Raw downloads cannot use the client's overall timeout: a multi-gigabyte
 	// file legitimately takes far longer than DefaultTimeout to stream.
@@ -72,33 +68,21 @@ var (
 	errURLRefused = errors.New("403 Forbidden (URL expired or refused)")
 )
 
-// RawExchanges returns the exchanges a raw dataset is served for.
-func RawExchanges(dataset RawDataset) []Exchange {
-	switch dataset {
-	case RawTrades, RawQuotes:
-		return Exchanges
-	default:
-		return rawDerivativeExchanges
-	}
+// RawExchanges returns the exchanges a raw dataset is served for: every one.
+// On Hyperliquid, whose feed carries no exchange time, the four derivative
+// datasets have a modelled exchange_timestamp and an exchange_timestamp_kind
+// column.
+func RawExchanges(RawDataset) []Exchange {
+	return Exchanges
 }
 
-// ValidateRawQuery rejects an unknown dataset or exchange, or a combination the
-// API does not serve, naming the valid choices.
+// ValidateRawQuery rejects an unknown dataset or exchange, naming the valid
+// choices.
 func ValidateRawQuery(dataset RawDataset, exchange Exchange) error {
 	if err := validateRawDataset(dataset); err != nil {
 		return err
 	}
-	if err := validateExchange(exchange); err != nil {
-		return err
-	}
-	available := RawExchanges(dataset)
-	if !slices.Contains(available, exchange) {
-		return fmt.Errorf(
-			"raw dataset %s is not available for %s (available: %s); %s serves trades and quotes only",
-			dataset, exchange, joinNames(available), ExchangeHyperliquidPerps,
-		)
-	}
-	return nil
+	return validateExchange(exchange)
 }
 
 func validateRawDataset(dataset RawDataset) error {
