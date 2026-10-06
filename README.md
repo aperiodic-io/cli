@@ -210,7 +210,7 @@ Raw trades, top-of-book quotes and derivative ticks for Binance, OKX and Hyperli
 
 Hyperliquid's derivative feed carries no exchange time, so in its `mark_price`, `index_price`, `funding_rate` and `open_interest` files `exchange_timestamp` is modelled, and an `exchange_timestamp_kind` column (`"modelled"`) follows it. Raw L2 order books are not offered.
 
-Every file starts with `exchange_timestamp` (the venue's time), `local_timestamp` (when the event reached the capture machine) and `local_timestamp_kind`: `"measured"`, or `"modelled"` for days before the feed was captured directly, where the local time is the exchange time plus a latency drawn from the measured distribution. Don't use modelled days for latency research. Timestamps are UTC.
+Every file starts with `exchange_timestamp` (the venue's time) and `local_timestamp` (when the event reached our capture machine). Timestamps are UTC.
 
 **Download a year of trades:**
 ```bash
