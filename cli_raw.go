@@ -18,7 +18,7 @@ var rawDatasetDescriptions = map[RawDataset]string{
 	RawQuotes:       "Top of book: best bid/ask price and amount",
 	RawMarkPrice:    "Mark price, one row per change",
 	RawIndexPrice:   "Index price, one row per change",
-	RawFundingRate:  "Funding rate and next funding time",
+	RawFundingRate:  "Funding rate",
 	RawOpenInterest: "Open interest, one row per change",
 }
 
