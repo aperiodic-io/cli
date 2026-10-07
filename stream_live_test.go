@@ -48,7 +48,9 @@ func TestCLI_Stream_Live_UnknownDatasetIsRejected(t *testing.T) {
 	}
 }
 
-// A 1m bar closes every minute, so one live row arrives within 75s.
+// A 1m bar closes every minute; waiting 150s spans two minute boundaries.
+// These tests gate every unravel-router data release against staging, so a
+// single missed minute on staging's live pipeline must not block a release.
 func TestCLI_Stream_Live_OHLCVRowArrives(t *testing.T) {
 	requireAPIKey(t)
 	useLiveStream(t)
@@ -59,7 +61,7 @@ func TestCLI_Stream_Live_OHLCVRowArrives(t *testing.T) {
 		"--interval", "1m",
 		"--symbols", rawTestSymbol,
 		"--count", "1",
-		"--duration", "75s",
+		"--duration", "150s",
 	)
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
@@ -82,5 +84,5 @@ func TestCLI_Stream_Live_OHLCVRowArrives(t *testing.T) {
 			return
 		}
 	}
-	t.Fatalf("expected a live %s row within 75s, got:\n%s", rawTestSymbol, stdout)
+	t.Fatalf("expected a live %s row within 150s, got:\n%s", rawTestSymbol, stdout)
 }
