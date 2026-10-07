@@ -288,11 +288,16 @@ aperiodic stream ohlcv \
 {"channel":"ohlcv.binance-futures.1m","snapshot":false,"data":{"exchange":11,"symbol":"perpetual-BTC-USDT:USDT","interval":"1m","time":1791307260000000,...}}
 ```
 
-- `data` is the row exactly as the server sent it. On plans that include it, the latest row per symbol arrives first with `"snapshot":true`.
+- `data` is the server's row object, unchanged apart from whitespace (no re-escaping). On plans that include it, the latest row per symbol arrives first with `"snapshot":true`.
 - Granted and rejected channels, server warnings and reconnects go to **stderr**.
-- Dropped connections reconnect with capped exponential backoff and re-subscribe. Delivery is at most once: rows published while disconnected are not replayed.
-- It exits non-zero with the server's message if the key is refused (401), the plan has no live access (403), the connection limit is reached (429), every channel is rejected, or the server ends the session for a lapsed plan or rotated key (close 4001) or rate-limit abuse (1008). None of these is retried.
-- Ctrl-C closes the socket cleanly.
+- Dropped connections reconnect with capped exponential backoff and re-subscribe. This covers network drops, server restarts or drains (closes such as 1000, 1001, 1011, 1012), handshake 5xx and 75 s of silence. The backoff starts over only once a connection has delivered a row or stayed up for 60 s. Delivery is at most once: rows published while disconnected are not replayed.
+- It exits 1 with the server's message, without retrying, if:
+  - the key is refused (401), the plan has no live access (403), or the handshake gets 426;
+  - the connection limit is reached (429) on the first connect. After a session has been subscribed, a 429 is retried, because the server may still be counting the dropped socket;
+  - the first connect gets no HTTP response at all (bad URL, DNS, TLS or proxy failure);
+  - every channel is rejected, the server unsubscribes the last one, or the server answers the subscribe with an error;
+  - the server closes with a 4000–4999 code (4001: plan lapsed or key rotated) or 1008 (rate-limit abuse).
+- Ctrl-C closes the socket cleanly and exits 130; SIGTERM exits 143.
 
 | Flag | Description | Default |
 |------|-------------|---------|

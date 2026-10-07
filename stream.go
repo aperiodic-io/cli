@@ -17,8 +17,9 @@ import (
 const (
 	DefaultStreamURL = "wss://stream.aperiodic.io/v1/stream"
 
-	// StatusPlanEnded is the close code for a lapsed plan or a rotated key.
-	StatusPlanEnded websocket.StatusCode = 4001
+	// streamSubscribeID is the id of the one subscribe; an op:"error" with
+	// it refuses the subscription.
+	streamSubscribeID = "s1"
 
 	// The server sends a heartbeat every ~30s when idle; a silent socket
 	// for longer than this is treated as dropped.
@@ -28,8 +29,9 @@ const (
 )
 
 var (
-	streamBackoffBase = 500 * time.Millisecond
-	streamBackoffMax  = 30 * time.Second
+	streamBackoffBase  = 500 * time.Millisecond
+	streamBackoffMax   = 30 * time.Second
+	streamHealthyAfter = 60 * time.Second
 )
 
 // StreamChannel is one subscription; Symbols nil means every symbol the
@@ -77,7 +79,8 @@ func (e *StreamHandshakeError) Error() string {
 	return fmt.Sprintf("%d: %s", e.StatusCode, e.Message)
 }
 
-// StreamClosedError is a close the client must not reconnect after.
+// StreamClosedError is a close the client must not reconnect after: any
+// 4000-4999 code (4001 is a lapsed plan or rotated key) or 1008.
 type StreamClosedError struct {
 	Code   websocket.StatusCode
 	Reason string
@@ -87,13 +90,24 @@ func (e *StreamClosedError) Error() string {
 	return fmt.Sprintf("stream closed by the server (%d): %s", int(e.Code), e.Reason)
 }
 
-// StreamRejectedError means the server granted none of the channels.
+// StreamRejectedError means no channel is subscribed: all were rejected on
+// subscribe, or the server unsubscribed the last of them.
 type StreamRejectedError struct {
 	Rejected []StreamRejection
 }
 
 func (e *StreamRejectedError) Error() string {
-	return "every channel was rejected"
+	return "no channel is subscribed"
+}
+
+// StreamSubscribeError is an op:"error" answering the subscribe itself.
+type StreamSubscribeError struct {
+	Code    string
+	Message string
+}
+
+func (e *StreamSubscribeError) Error() string {
+	return fmt.Sprintf("subscription refused: %s: %s", e.Code, e.Message)
 }
 
 // errStreamDone ends the stream because the caller has what it wanted.
@@ -101,10 +115,13 @@ var errStreamDone = errors.New("stream done")
 
 type StreamHandlers struct {
 	// Row receives each data row; returning false closes the stream.
-	Row        func(StreamRow) bool
-	Subscribed func(granted []string, rejected []StreamRejection)
-	ServerErr  func(code, message string)
-	Reconnect  func(cause error, wait time.Duration, attempt int)
+	Row          func(StreamRow) bool
+	Subscribed   func(granted []string, rejected []StreamRejection)
+	Unsubscribed func(removed []string, rejected []StreamRejection)
+	ServerErr    func(code, message string)
+	// Reconnect reports a retry; connected says whether the failed attempt
+	// had a connection to lose.
+	Reconnect func(cause error, wait time.Duration, attempt int, connected bool)
 }
 
 type Streamer struct {
@@ -132,27 +149,41 @@ func NewStreamer(apiKey string, env func(string) string, channels []StreamChanne
 	return &Streamer{URL: url, Header: header, Channels: channels, Handlers: handlers}
 }
 
-// Run streams until ctx ends (nil), Row asks to stop (nil), or a terminal
-// error: a handshake refusal, every channel rejected, or a 4001/1008 close.
-// Anything else reconnects with capped, jittered exponential backoff.
+// sessionResult describes how one connection went.
+type sessionResult struct {
+	// connected: the handshake succeeded, or at least got an HTTP response.
+	connected  bool
+	subscribed bool
+	// healthy: the connection delivered a row or stayed up for
+	// streamHealthyAfter, so the backoff starts over.
+	healthy bool
+	err     error
+}
+
+// Run streams until ctx ends (nil), Row asks to stop (nil), or a final error
+// (see isFinal). Anything else reconnects with capped, jittered exponential
+// backoff and subscribes again.
 func (s *Streamer) Run(ctx context.Context) error {
 	attempt := 0
+	everConnected, everSubscribed := false, false
 	for {
-		subscribed, err := s.session(ctx)
-		switch {
-		case errors.Is(err, errStreamDone), ctx.Err() != nil:
+		res := s.session(ctx)
+		if errors.Is(res.err, errStreamDone) || ctx.Err() != nil {
 			return nil
-		case isTerminalStreamError(err):
-			return err
 		}
+		if isFinal(res, everConnected, everSubscribed) {
+			return res.err
+		}
+		everConnected = everConnected || res.connected
+		everSubscribed = everSubscribed || res.subscribed
 
-		if subscribed {
+		if res.healthy {
 			attempt = 0
 		}
 		attempt++
 		wait := streamBackoff(attempt)
 		if s.Handlers.Reconnect != nil {
-			s.Handlers.Reconnect(err, wait, attempt)
+			s.Handlers.Reconnect(res.err, wait, attempt, res.connected)
 		}
 
 		select {
@@ -163,15 +194,34 @@ func (s *Streamer) Run(ctx context.Context) error {
 	}
 }
 
-func isTerminalStreamError(err error) bool {
+// isFinal: handshake 401/403/426 and other 4xx; a 429 before any session
+// was subscribed (once one was, the server may still count the dropped
+// socket); a first connect that got no HTTP response at all (bad URL, DNS,
+// TLS, proxy); a 4000-4999 or 1008 close; nothing left subscribed; the
+// subscribe refused. Handshake 5xx, network drops, other closes (1000
+// included: the server draining) and the idle timeout reconnect.
+func isFinal(res sessionResult, everConnected, everSubscribed bool) bool {
 	var handshake *StreamHandshakeError
+	if errors.As(res.err, &handshake) {
+		switch {
+		case handshake.StatusCode >= 500:
+			return false
+		case handshake.StatusCode == http.StatusTooManyRequests:
+			return !everSubscribed
+		}
+		return true
+	}
+	if !res.connected && !everConnected {
+		return true
+	}
 	var closed *StreamClosedError
 	var rejected *StreamRejectedError
-	if errors.As(err, &handshake) {
-		// A 5xx is the service restarting; any 4xx won't change on retry.
-		return handshake.StatusCode < 500
-	}
-	return errors.As(err, &closed) || errors.As(err, &rejected)
+	var refused *StreamSubscribeError
+	return errors.As(res.err, &closed) || errors.As(res.err, &rejected) || errors.As(res.err, &refused)
+}
+
+func isFinalCloseCode(code websocket.StatusCode) bool {
+	return code == websocket.StatusPolicyViolation || (code >= 4000 && code <= 4999)
 }
 
 func streamBackoff(attempt int) time.Duration {
@@ -183,14 +233,24 @@ func streamBackoff(attempt int) time.Duration {
 	return half + rand.N(half+1)
 }
 
-// session runs one connection and reports whether it got a subscription ack.
-func (s *Streamer) session(ctx context.Context) (subscribed bool, err error) {
+func (s *Streamer) session(ctx context.Context) (res sessionResult) {
 	conn, err := s.dial(ctx)
 	if err != nil {
-		return false, err
+		var handshake *StreamHandshakeError
+		res.connected = errors.As(err, &handshake)
+		res.err = err
+		return res
 	}
+	res.connected = true
 	defer conn.CloseNow()
 	conn.SetReadLimit(streamMessageLimit)
+
+	connectedAt := time.Now()
+	defer func() {
+		if time.Since(connectedAt) >= streamHealthyAfter {
+			res.healthy = true
+		}
+	}()
 
 	// Closing from here gives the server a clean close handshake while the
 	// loop below is blocked in Read.
@@ -199,27 +259,29 @@ func (s *Streamer) session(ctx context.Context) (subscribed bool, err error) {
 	})
 	defer stop()
 
-	subscribe, err := json.Marshal(map[string]any{"op": "subscribe", "id": "s1", "channels": s.Channels})
+	subscribe, err := json.Marshal(map[string]any{"op": "subscribe", "id": streamSubscribeID, "channels": s.Channels})
 	if err != nil {
-		return false, err
+		res.err = err
+		return res
 	}
 	if err := conn.Write(ctx, websocket.MessageText, subscribe); err != nil {
-		return false, err
+		res.err = err
+		return res
 	}
 
+	granted := map[string]bool{}
 	for {
 		msg, err := readStreamMessage(conn)
 		if err != nil {
+			res.err = err
 			if ctx.Err() != nil {
-				return subscribed, ctx.Err()
-			}
-			switch code := websocket.CloseStatus(err); code {
-			case StatusPlanEnded, websocket.StatusPolicyViolation:
+				res.err = ctx.Err()
+			} else if code := websocket.CloseStatus(err); isFinalCloseCode(code) {
 				var closeErr websocket.CloseError
 				errors.As(err, &closeErr)
-				return subscribed, &StreamClosedError{Code: code, Reason: closeErr.Reason}
+				res.err = &StreamClosedError{Code: code, Reason: closeErr.Reason}
 			}
-			return subscribed, err
+			return res
 		}
 
 		var frame streamFrame
@@ -232,20 +294,45 @@ func (s *Streamer) session(ctx context.Context) (subscribed bool, err error) {
 
 		switch {
 		case frame.Channel != "" && frame.Data != nil:
+			res.healthy = true
 			row := StreamRow{Channel: frame.Channel, Snapshot: frame.Snapshot, Data: frame.Data}
 			if !s.Handlers.Row(row) {
 				_ = conn.Close(websocket.StatusNormalClosure, "")
-				return subscribed, errStreamDone
+				res.err = errStreamDone
+				return res
 			}
 		case frame.Op == "subscribed":
-			subscribed = true
+			res.subscribed = true
+			for _, ch := range frame.Channels {
+				granted[ch] = true
+			}
 			if s.Handlers.Subscribed != nil {
 				s.Handlers.Subscribed(frame.Channels, frame.Rejected)
 			}
-			if len(frame.Channels) == 0 {
+			if len(granted) == 0 {
 				_ = conn.Close(websocket.StatusNormalClosure, "")
-				return subscribed, &StreamRejectedError{Rejected: frame.Rejected}
+				res.err = &StreamRejectedError{Rejected: frame.Rejected}
+				return res
 			}
+		case frame.Op == "unsubscribed":
+			for _, ch := range frame.Channels {
+				delete(granted, ch)
+			}
+			for _, r := range frame.Rejected {
+				delete(granted, r.Channel)
+			}
+			if s.Handlers.Unsubscribed != nil {
+				s.Handlers.Unsubscribed(frame.Channels, frame.Rejected)
+			}
+			if len(granted) == 0 {
+				_ = conn.Close(websocket.StatusNormalClosure, "")
+				res.err = &StreamRejectedError{Rejected: frame.Rejected}
+				return res
+			}
+		case frame.Op == "error" && frame.ID == streamSubscribeID:
+			_ = conn.Close(websocket.StatusNormalClosure, "")
+			res.err = &StreamSubscribeError{Code: frame.Code, Message: frame.Message}
+			return res
 		case frame.Op == "error":
 			if s.Handlers.ServerErr != nil {
 				s.Handlers.ServerErr(frame.Code, frame.Message)

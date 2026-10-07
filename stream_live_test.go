@@ -43,7 +43,7 @@ func TestCLI_Stream_Live_UnknownDatasetIsRejected(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d; stderr: %s", code, stderr)
 	}
-	if !strings.Contains(stderr, "Rejected: ") || !strings.Contains(stderr, "every channel was rejected") {
+	if !strings.Contains(stderr, "Rejected: ") || !strings.Contains(stderr, "no channel is subscribed") {
 		t.Errorf("expected the channel rejected, got: %s", stderr)
 	}
 }

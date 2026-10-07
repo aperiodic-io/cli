@@ -3,10 +3,13 @@ package aperiodic
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,9 +30,10 @@ type fakeSubscribe struct {
 // fakeStream is a stand-in for the stream service. Each connection runs
 // script with the subscribe message it received and its 1-based number.
 type fakeStream struct {
-	t      *testing.T
-	status int
-	body   string
+	t *testing.T
+	// refuse, when set, answers handshake n with an HTTP error instead of an
+	// upgrade; a zero status accepts.
+	refuse func(n int) (status int, body string)
 	script func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, n int)
 
 	mu      sync.Mutex
@@ -57,11 +61,13 @@ func (f *fakeStream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	n := len(f.headers)
 	f.mu.Unlock()
 
-	if f.status != 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(f.status)
-		_, _ = w.Write([]byte(f.body))
-		return
+	if f.refuse != nil {
+		if status, body := f.refuse(n); status != 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+			return
+		}
 	}
 
 	conn, err := websocket.Accept(w, r, nil)
@@ -155,7 +161,7 @@ func TestStream_SendsKeyHeaderAndPrintsRows(t *testing.T) {
 			send(ctx, conn, `{"channel":"`+streamTestChannel+`","snapshot":true,"data":{"symbol":"perpetual-BTC-USDT:USDT","close":1}}`)
 			send(ctx, conn, `{"op":"heartbeat","time":1791307260000000}`)
 			send(ctx, conn, `{"op":"error","code":"limit_exceeded","message":"Too many messages"}`)
-			send(ctx, conn, row("2"))
+			send(ctx, conn, `{"channel":"`+streamTestChannel+`","data":{"symbol":"perpetual-BTC-USDT:USDT","note":"<a&b>","time":1791307260000000}}`)
 			drain(ctx, conn)
 		},
 	})
@@ -206,6 +212,10 @@ func TestStream_SendsKeyHeaderAndPrintsRows(t *testing.T) {
 		t.Errorf("expected the data object verbatim, got %s", lines[1].Data)
 	}
 
+	if !strings.Contains(stdout, `"note":"<a&b>"`) {
+		t.Errorf("expected data not to be HTML-escaped, got: %s", stdout)
+	}
+
 	if !strings.Contains(stderr, "Subscribed: "+streamTestChannel) {
 		t.Errorf("expected the granted channel on stderr, got: %s", stderr)
 	}
@@ -240,7 +250,7 @@ func TestStream_OmitsSymbolsWhenNoneGiven(t *testing.T) {
 	}
 }
 
-func TestStream_HandshakeRefusalsExitWithoutRetrying(t *testing.T) {
+func TestStream_HandshakeRefusalsOnTheFirstConnectExitWithoutRetrying(t *testing.T) {
 	tests := []struct {
 		status  int
 		body    string
@@ -248,11 +258,12 @@ func TestStream_HandshakeRefusalsExitWithoutRetrying(t *testing.T) {
 	}{
 		{http.StatusUnauthorized, `{"error":"Invalid API key"}`, "Invalid API key"},
 		{http.StatusForbidden, `{"error":"Live data is not on your plan"}`, "Live data is not on your plan"},
+		{http.StatusUpgradeRequired, `{"error":"Upgrade required"}`, "Upgrade required"},
 		{http.StatusTooManyRequests, `{"error":"Too many connections (max 2)"}`, "Too many connections (max 2)"},
 	}
 	for _, tt := range tests {
 		t.Run(http.StatusText(tt.status), func(t *testing.T) {
-			f := startFakeStream(t, &fakeStream{status: tt.status, body: tt.body})
+			f := startFakeStream(t, &fakeStream{refuse: func(int) (int, string) { return tt.status, tt.body }})
 
 			stdout, stderr, code := runCLI("stream", "ohlcv", "--duration", "5s")
 			if code != 1 {
@@ -349,6 +360,8 @@ func TestStream_DoesNotReconnectAfterTerminalCloses(t *testing.T) {
 	}{
 		{4001, "Plan lapsed"},
 		{websocket.StatusPolicyViolation, "Rate limit abuse"},
+		{4003, "Subscription revoked"},
+		{4999, "Some future reason"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.reason, func(t *testing.T) {
@@ -423,5 +436,215 @@ func TestStream_Help(t *testing.T) {
 	stdout, _, code := runCLI("stream", "help")
 	if code != 0 || !strings.Contains(stdout, "aperiodic stream <dataset>") {
 		t.Errorf("expected stream usage, got %d: %s", code, stdout)
+	}
+}
+
+// heartbeatForever reads in the background too, so it answers the close.
+func heartbeatForever(ctx context.Context, conn *websocket.Conn) {
+	ctx = conn.CloseRead(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+			if conn.Write(ctx, websocket.MessageText, []byte(`{"op":"heartbeat"}`)) != nil {
+				return
+			}
+		}
+	}
+}
+
+func TestStream_Retries429OnceSubscribed(t *testing.T) {
+	f := startFakeStream(t, &fakeStream{
+		refuse: func(n int) (int, string) {
+			if n >= 2 && n <= 4 {
+				return http.StatusTooManyRequests, `{"error":"Too many connections (max 1)"}`
+			}
+			return 0, ""
+		},
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, n int) {
+			ack(ctx, conn, sub, "")
+			send(ctx, conn, row("1"))
+			if n == 1 {
+				conn.CloseNow()
+				return
+			}
+			drain(ctx, conn)
+		},
+	})
+
+	stdout, stderr, code := runCLI("stream", "ohlcv", "--count", "2", "--duration", "10s")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if n := f.connections(); n != 5 {
+		t.Errorf("expected one session, three 429s and a resumed session, got %d handshakes", n)
+	}
+	if !strings.Contains(stderr, "Too many connections") {
+		t.Errorf("expected the 429 on stderr, got: %s", stderr)
+	}
+	if len(parseStreamLines(t, stdout)) != 2 {
+		t.Errorf("expected a row from each session, got: %s", stdout)
+	}
+}
+
+func TestStream_FirstConnectWithoutAResponseFailsFast(t *testing.T) {
+	startFakeStream(t, &fakeStream{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	listener.Close()
+	t.Setenv("APERIODIC_STREAM_URL", "ws://"+addr+"/v1/stream")
+
+	start := time.Now()
+	_, stderr, code := runCLI("stream", "ohlcv", "--duration", "10s")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d; stderr: %s", code, stderr)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("expected to fail fast, took %s", time.Since(start))
+	}
+	if strings.Contains(stderr, "Connection lost") || strings.Contains(stderr, "reconnecting") {
+		t.Errorf("expected no reconnect for a connection that never existed, got: %s", stderr)
+	}
+}
+
+func TestStream_ReconnectsAfterServerCloses(t *testing.T) {
+	tests := []struct {
+		code   websocket.StatusCode
+		reason string
+	}{
+		{websocket.StatusNormalClosure, "draining"},
+		{websocket.StatusGoingAway, "going away"},
+		{websocket.StatusInternalError, "internal error"},
+		{websocket.StatusServiceRestart, "restart"},
+		{websocket.StatusTryAgainLater, "try again later"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			f := startFakeStream(t, &fakeStream{
+				script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, n int) {
+					ack(ctx, conn, sub, "")
+					send(ctx, conn, row("1"))
+					if n == 1 {
+						_ = conn.Close(tt.code, tt.reason)
+						return
+					}
+					drain(ctx, conn)
+				},
+			})
+
+			_, stderr, code := runCLI("stream", "ohlcv", "--count", "2", "--duration", "10s")
+			if code != 0 {
+				t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+			}
+			if n := f.connections(); n != 2 {
+				t.Errorf("expected a reconnect, got %d connections", n)
+			}
+		})
+	}
+}
+
+// An ack alone does not reset the backoff, so a server that acks and then
+// closes is retried ever more slowly rather than in a tight loop.
+func TestStream_BacksOffWhenAckedSessionsCloseAtOnce(t *testing.T) {
+	startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, _ int) {
+			ack(ctx, conn, sub, "")
+			_ = conn.Close(websocket.StatusNormalClosure, "")
+		},
+	})
+
+	_, stderr, code := runCLI("stream", "ohlcv", "--duration", "800ms")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stderr, "(attempt 4)") {
+		t.Errorf("expected the attempt count to keep growing, got: %s", stderr)
+	}
+}
+
+func TestStream_PartialUnsubscribeKeepsStreaming(t *testing.T) {
+	startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, _ int) {
+			send(ctx, conn, `{"op":"subscribed","id":"`+sub.ID+`","channels":["`+streamTestChannel+`","ohlcv.okx-perps.1m"],"rejected":[]}`)
+			send(ctx, conn, `{"op":"unsubscribed","channels":["ohlcv.okx-perps.1m"],"rejected":[{"channel":"ohlcv.okx-perps.1m","code":"not_entitled","message":"plan downgraded"}]}`)
+			send(ctx, conn, row("1"))
+			drain(ctx, conn)
+		},
+	})
+
+	stdout, stderr, code := runCLI("stream", "ohlcv", "--count", "1", "--duration", "5s")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stderr, "Unsubscribed: ohlcv.okx-perps.1m") || !strings.Contains(stderr, "plan downgraded") {
+		t.Errorf("expected the removal on stderr, got: %s", stderr)
+	}
+	if len(parseStreamLines(t, stdout)) != 1 {
+		t.Errorf("expected one row, got: %s", stdout)
+	}
+}
+
+func TestStream_TotalUnsubscribeExits(t *testing.T) {
+	f := startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, _ int) {
+			ack(ctx, conn, sub, "")
+			send(ctx, conn, `{"op":"unsubscribed","channels":["`+streamTestChannel+`"],"rejected":[{"channel":"`+streamTestChannel+`","code":"not_entitled","message":"plan downgraded"}]}`)
+			heartbeatForever(ctx, conn)
+		},
+	})
+
+	start := time.Now()
+	_, stderr, code := runCLI("stream", "ohlcv", "--duration", "5s")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d; stderr: %s", code, stderr)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Errorf("expected to exit once nothing is subscribed, took %s", time.Since(start))
+	}
+	if !strings.Contains(stderr, "plan downgraded") {
+		t.Errorf("expected the reason on stderr, got: %s", stderr)
+	}
+	if n := f.connections(); n != 1 {
+		t.Errorf("expected no reconnect, got %d connections", n)
+	}
+}
+
+func TestStream_SubscribeRefusedByAnErrorExits(t *testing.T) {
+	f := startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, _ int) {
+			if sub.ID != streamSubscribeID {
+				t.Errorf("expected subscribe id %q, got %q", streamSubscribeID, sub.ID)
+			}
+			send(ctx, conn, `{"op":"error","id":"`+sub.ID+`","code":"invalid_message","message":"bad subscribe"}`)
+			heartbeatForever(ctx, conn)
+		},
+	})
+
+	start := time.Now()
+	_, stderr, code := runCLI("stream", "ohlcv", "--duration", "5s")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d; stderr: %s", code, stderr)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Errorf("expected to exit at once, took %s", time.Since(start))
+	}
+	if !strings.Contains(stderr, "invalid_message") || !strings.Contains(stderr, "bad subscribe") {
+		t.Errorf("expected the server's message, got: %s", stderr)
+	}
+	if n := f.connections(); n != 1 {
+		t.Errorf("expected no reconnect, got %d connections", n)
+	}
+}
+
+func TestStream_SignalExitCodes(t *testing.T) {
+	if code := signalExitCode(os.Interrupt); code != 130 {
+		t.Errorf("expected 130 for SIGINT, got %d", code)
+	}
+	if code := signalExitCode(syscall.SIGTERM); code != 143 {
+		t.Errorf("expected 143 for SIGTERM, got %d", code)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -72,23 +73,35 @@ func (c *CLI) runStream(args []string) int {
 		}
 	}
 
-	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stopSignals()
+	ctx, interrupt := context.WithCancel(context.Background())
+	defer interrupt()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	var interrupted atomic.Value
+	go func(done <-chan struct{}) {
+		select {
+		case sig := <-signals:
+			interrupted.Store(sig)
+			interrupt()
+		case <-done:
+		}
+	}(ctx.Done())
 	if f.duration > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, f.duration)
 		defer cancel()
 	}
 
+	out := json.NewEncoder(c.Stdout)
+	out.SetEscapeHTML(false)
 	live := 0
 	streamer := NewStreamer(apiKey, c.Env, []StreamChannel{channel}, StreamHandlers{
 		Row: func(row StreamRow) bool {
-			line, err := json.Marshal(row)
-			if err != nil {
+			if err := out.Encode(row); err != nil {
 				fmt.Fprintf(c.Stderr, "Warning: skipping a row: %v\n", err)
 				return true
 			}
-			fmt.Fprintf(c.Stdout, "%s\n", line)
 			if !row.Snapshot {
 				live++
 			}
@@ -102,34 +115,50 @@ func (c *CLI) runStream(args []string) int {
 				fmt.Fprintf(c.Stderr, "Rejected: %s (%s): %s\n", r.Channel, r.Code, r.Message)
 			}
 		},
+		Unsubscribed: func(removed []string, rejected []StreamRejection) {
+			if len(removed) > 0 {
+				fmt.Fprintf(c.Stderr, "Unsubscribed: %s\n", strings.Join(removed, ", "))
+			}
+			for _, r := range rejected {
+				fmt.Fprintf(c.Stderr, "Rejected: %s (%s): %s\n", r.Channel, r.Code, r.Message)
+			}
+		},
 		ServerErr: func(code, message string) {
 			fmt.Fprintf(c.Stderr, "Warning: server error %s: %s\n", code, message)
 		},
-		Reconnect: func(cause error, wait time.Duration, attempt int) {
-			fmt.Fprintf(c.Stderr, "Connection lost (%v); reconnecting in %s (attempt %d)\n", cause, wait.Round(time.Millisecond), attempt)
+		Reconnect: func(cause error, wait time.Duration, attempt int, connected bool) {
+			what := "Connection lost"
+			if !connected {
+				what = "Connection failed"
+			}
+			fmt.Fprintf(c.Stderr, "%s (%v); reconnecting in %s (attempt %d)\n", what, cause, wait.Round(time.Millisecond), attempt)
 		},
 	})
 
 	err := streamer.Run(ctx)
+	if sig, ok := interrupted.Load().(os.Signal); ok {
+		return signalExitCode(sig)
+	}
 	if err == nil {
-		if errors.Is(context.Cause(ctx), context.Canceled) {
-			// Interrupted (Ctrl-C or SIGTERM), not stopped by --count or --duration.
-			return 130
-		}
 		return 0
 	}
 
 	var handshake *StreamHandshakeError
-	var rejected *StreamRejectedError
 	switch {
 	case errors.As(err, &handshake):
 		fmt.Fprintf(c.Stderr, "Error connecting to the stream: %v\n", handshake)
-	case errors.As(err, &rejected):
-		fmt.Fprintln(c.Stderr, "Error: every channel was rejected")
 	default:
 		fmt.Fprintf(c.Stderr, "Error: %v\n", err)
 	}
 	return 1
+}
+
+// signalExitCode follows the shell convention of 128 + the signal number.
+func signalExitCode(sig os.Signal) int {
+	if sig == syscall.SIGTERM {
+		return 128 + 15
+	}
+	return 128 + 2
 }
 
 func (c *CLI) printStreamUsage() {
@@ -144,8 +173,10 @@ func (c *CLI) printStreamUsage() {
 	fmt.Fprintln(out, "Snapshot rows (the latest row per symbol, sent on subscribe on some plans)")
 	fmt.Fprintln(out, "have \"snapshot\":true. Subscriptions, rejections, reconnects and warnings go")
 	fmt.Fprintln(out, "to stderr. Delivery is at most once: rows missed while reconnecting are not")
-	fmt.Fprintln(out, "replayed. Exits non-zero if the key is refused, the plan has no live access,")
-	fmt.Fprintln(out, "the connection limit is reached, or every channel is rejected.")
+	fmt.Fprintln(out, "replayed. Exits 1 if the key is refused, the plan has no live access, the")
+	fmt.Fprintln(out, "connection limit is reached on the first connect, no channel is (or stays)")
+	fmt.Fprintln(out, "subscribed, or the server ends the session for good. Ctrl-C exits 130,")
+	fmt.Fprintln(out, "SIGTERM 143.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Environment:")
 	fmt.Fprintln(out, "  APERIODIC_API_KEY     API key on a plan with live data (required)")
