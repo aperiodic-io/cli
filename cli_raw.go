@@ -73,20 +73,24 @@ func (c *CLI) runRaw(args []string) int {
 	return c.runRawDownload(args)
 }
 
-// parseRawArgs parses flags wherever they sit among the positional arguments;
+func (c *CLI) parseRawArgs(fs *flag.FlagSet, args []string) (positional []string, exitCode int, ok bool) {
+	return c.parseArgs(fs, args, c.printRawUsage, "aperiodic raw help")
+}
+
+// parseArgs parses flags wherever they sit among the positional arguments;
 // the flag package alone stops at the first positional one. On failure it
 // returns the exit code, 0 when the user asked for help.
-func (c *CLI) parseRawArgs(fs *flag.FlagSet, args []string) (positional []string, exitCode int, ok bool) {
+func (c *CLI) parseArgs(fs *flag.FlagSet, args []string, printUsage func(), helpCommand string) (positional []string, exitCode int, ok bool) {
 	fs.SetOutput(c.Stderr)
 	fs.Usage = func() {}
 
 	for {
 		if err := fs.Parse(args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
-				c.printRawUsage()
+				printUsage()
 				return nil, 0, false
 			}
-			fmt.Fprintln(c.Stderr, "Run 'aperiodic raw help' for usage.")
+			fmt.Fprintf(c.Stderr, "Run '%s' for usage.\n", helpCommand)
 			return nil, 2, false
 		}
 		args = fs.Args()

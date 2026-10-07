@@ -53,9 +53,10 @@ aperiodic <metric> [flags]
 aperiodic symbols [flags]
 aperiodic raw <dataset> [flags]
 aperiodic raw coverage [flags]
+aperiodic stream <dataset> [flags]
 ```
 
-The first argument is the metric name. Use `symbols` to list available symbols for an exchange, and `raw` for [raw data](#raw-data).
+The first argument is the metric name. Use `symbols` to list available symbols for an exchange, `raw` for [raw data](#raw-data), and `stream` for the [live stream](#live-stream).
 
 ## Available Metrics
 
@@ -270,6 +271,43 @@ aperiodic raw quotes --preview \
   --symbol perpetual-BTC-USDT:USDT \
   --output-dir ./raw
 ```
+
+## Live stream
+
+`aperiodic stream` subscribes to the live WebSocket feed (`wss://stream.aperiodic.io/v1/stream`) and prints **one JSON line per row** to stdout, so it pipes straight into `jq` or a file. It needs an API key on a plan with live data; symbols are the same as for the metrics.
+
+```bash
+aperiodic stream ohlcv \
+  --exchange binance-futures \
+  --interval 1m \
+  --symbols perpetual-BTC-USDT:USDT,perpetual-ETH-USDT:USDT
+```
+
+```
+{"channel":"ohlcv.binance-futures.1m","snapshot":true,"data":{"exchange":11,"symbol":"perpetual-BTC-USDT:USDT","interval":"1m","time":1791307200000000,...}}
+{"channel":"ohlcv.binance-futures.1m","snapshot":false,"data":{"exchange":11,"symbol":"perpetual-BTC-USDT:USDT","interval":"1m","time":1791307260000000,...}}
+```
+
+- `data` is the row exactly as the server sent it. On plans that include it, the latest row per symbol arrives first with `"snapshot":true`.
+- Granted and rejected channels, server warnings and reconnects go to **stderr**.
+- Dropped connections reconnect with capped exponential backoff and re-subscribe. Delivery is at most once: rows published while disconnected are not replayed.
+- It exits non-zero with the server's message if the key is refused (401), the plan has no live access (403), the connection limit is reached (429), every channel is rejected, or the server ends the session for a lapsed plan or rotated key (close 4001) or rate-limit abuse (1008). None of these is retried.
+- Ctrl-C closes the socket cleanly.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--exchange` | Exchange name | `binance-futures` |
+| `--interval` | Aggregation interval | `1m` |
+| `--symbols` | Comma-separated symbols | every symbol your plan allows |
+| `--count` | Stop after this many live rows (snapshot rows are printed but not counted) | no limit |
+| `--duration` | Stop after this long, e.g. `90s`, `1h` | no limit |
+
+**Take the next closed 1m bar and stop:**
+```bash
+aperiodic stream ohlcv --symbols perpetual-BTC-USDT:USDT --count 1 | jq 'select(.snapshot | not) | .data'
+```
+
+Set `APERIODIC_STREAM_URL` to point at another stream endpoint.
 
 ## Build from Source
 

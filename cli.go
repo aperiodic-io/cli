@@ -36,6 +36,9 @@ func (c *CLI) Run(args []string) int {
 	if cmd == "raw" {
 		return c.runRaw(args[1:])
 	}
+	if cmd == "stream" {
+		return c.runStream(args[1:])
+	}
 
 	fs := flag.NewFlagSet("aperiodic", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
@@ -99,6 +102,7 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "  aperiodic symbols [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic raw <dataset> [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic raw coverage [flags]")
+	fmt.Fprintln(c.Stdout, "  aperiodic stream <dataset> [flags]")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Metrics:")
 	fmt.Fprintln(c.Stdout, "  ohlcv             OHLCV (open/high/low/close/volume)")
@@ -124,6 +128,7 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "Commands:")
 	fmt.Fprintln(c.Stdout, "  symbols  List available symbols for an exchange")
 	fmt.Fprintln(c.Stdout, "  raw      Download raw trades, quotes and derivative ticks (Prime + Raw plan; see 'aperiodic raw help')")
+	fmt.Fprintln(c.Stdout, "  stream   Stream live rows over WebSocket as JSON lines (see 'aperiodic stream help')")
 	fmt.Fprintln(c.Stdout, "  help     Show this help")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Environment:")
