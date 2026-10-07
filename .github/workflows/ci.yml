@@ -15,6 +15,10 @@ on:
         description: 'API base URL to test against (empty: production)'
         required: false
         default: ''
+      stream_url:
+        description: 'Live-stream WebSocket URL to test against (empty: production)'
+        required: false
+        default: ''
 
 jobs:
   test:
@@ -52,9 +56,12 @@ jobs:
     - name: Test
       env:
         # Push and PR runs test production. A dispatch with a base_url tests
-        # that API (staging) with its key. Either key must be on Prime + Raw.
+        # that API (staging) with its key. Either key must be on Prime + Raw,
+        # with live ohlcv.binance-futures.1m for the stream tests. Only base_url
+        # picks the key: stream_url never does, so a staging dispatch sends both.
         APERIODIC_API_KEY: ${{ inputs.base_url && secrets.APERIODIC_STAGING_API_KEY || secrets.APERIODIC_API_KEY }}
         APERIODIC_API_URL: ${{ inputs.base_url || '' }}
+        APERIODIC_STREAM_URL: ${{ inputs.stream_url || '' }}
         CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
         CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       run: go test -v ./...
