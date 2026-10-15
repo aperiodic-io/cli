@@ -692,14 +692,31 @@ func TestCLI_Raw_ReportsMissingPeriods(t *testing.T) {
 }
 
 func TestCLI_Raw_NoFiles(t *testing.T) {
-	newRawStub(t, staticListing())
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			stub := newRawStub(t, staticListing())
+			args := rawArgs(t.TempDir())
+			if preview {
+				t.Setenv("APERIODIC_API_KEY", "")
+				args = append(args, "--preview")
+			} else {
+				args = append(args, "--start-date", "2025-06-01", "--end-date", "2025-06-30")
+			}
 
-	stdout, stderr, code := runCLI(rawArgs(t.TempDir(), "--start-date", "2025-06-01", "--end-date", "2025-06-30")...)
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
-	}
-	if !strings.Contains(stdout, "No data found") {
-		t.Errorf("expected a no-data message, got: %s", stdout)
+			stdout, stderr, code := runCLI(args...)
+			if code != 0 {
+				t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+			}
+			if !strings.Contains(stdout, "No data found") {
+				t.Errorf("expected a no-data message, got: %s", stdout)
+			}
+			if preview {
+				calls := stub.calls()
+				if len(calls) != 1 || calls[0].path != "/data/raw/preview/trades" || calls[0].key != DemoAPIKey {
+					t.Errorf("expected one preview request with the demo key, got %v", calls)
+				}
+			}
+		})
 	}
 }
 
