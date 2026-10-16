@@ -313,6 +313,14 @@ func TestRawFilePath(t *testing.T) {
 }
 
 func TestValidateRawQuery(t *testing.T) {
+	want := []RawDataset{RawTrades, RawQuotes, RawMarkPrice, RawIndexPrice, RawFundingRate}
+	if !slices.Equal(RawDatasets, want) {
+		t.Fatalf("expected five raw datasets, got %v", RawDatasets)
+	}
+	if err := ValidateRawQuery("open_interest", ExchangeBinanceFutures); err == nil {
+		t.Error("expected raw open interest to be rejected")
+	}
+
 	// The API serves every raw dataset on every exchange, Hyperliquid's
 	// derivative datasets included (with a modelled exchange_timestamp).
 	for _, dataset := range RawDatasets {
@@ -323,7 +331,7 @@ func TestValidateRawQuery(t *testing.T) {
 		}
 	}
 
-	if err := ValidateRawQuery("l2_book", ExchangeBinanceFutures); err == nil || !strings.Contains(err.Error(), "open_interest") {
+	if err := ValidateRawQuery("l2_book", ExchangeBinanceFutures); err == nil || !strings.Contains(err.Error(), "funding_rate") {
 		t.Errorf("expected an unknown dataset to list the valid ones, got %v", err)
 	}
 	if err := ValidateRawQuery(RawTrades, "bybit"); err == nil || !strings.Contains(err.Error(), "okx-perps") {
@@ -684,14 +692,31 @@ func TestCLI_Raw_ReportsMissingPeriods(t *testing.T) {
 }
 
 func TestCLI_Raw_NoFiles(t *testing.T) {
-	newRawStub(t, staticListing())
+	for _, preview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preview=%t", preview), func(t *testing.T) {
+			stub := newRawStub(t, staticListing())
+			args := rawArgs(t.TempDir())
+			if preview {
+				t.Setenv("APERIODIC_API_KEY", "")
+				args = append(args, "--preview")
+			} else {
+				args = append(args, "--start-date", "2025-06-01", "--end-date", "2025-06-30")
+			}
 
-	stdout, stderr, code := runCLI(rawArgs(t.TempDir(), "--start-date", "2025-06-01", "--end-date", "2025-06-30")...)
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
-	}
-	if !strings.Contains(stdout, "No data found") {
-		t.Errorf("expected a no-data message, got: %s", stdout)
+			stdout, stderr, code := runCLI(args...)
+			if code != 0 {
+				t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+			}
+			if !strings.Contains(stdout, "No data found") {
+				t.Errorf("expected a no-data message, got: %s", stdout)
+			}
+			if preview {
+				calls := stub.calls()
+				if len(calls) != 1 || calls[0].path != "/data/raw/preview/trades" || calls[0].key != DemoAPIKey {
+					t.Errorf("expected one preview request with the demo key, got %v", calls)
+				}
+			}
+		})
 	}
 }
 
@@ -706,6 +731,7 @@ func TestCLI_Raw_ValidatesBeforeCallingTheAPI(t *testing.T) {
 		want string
 	}{
 		{"no dataset", []string{"raw", "--symbol", rawTestSymbol, "--output-dir", outputDir}, "raw dataset is required"},
+		{"raw open interest", append([]string{"raw", "open_interest", "--symbol", rawTestSymbol, "--output-dir", outputDir}, dates...), `unknown raw dataset "open_interest"`},
 		{"unknown dataset", append([]string{"raw", "book", "--symbol", rawTestSymbol, "--output-dir", outputDir}, dates...), `unknown raw dataset "book"`},
 		{"unknown exchange", append([]string{"raw", "trades", "--exchange", "bybit", "--symbol", rawTestSymbol, "--output-dir", outputDir}, dates...), `unknown exchange "bybit"`},
 		{"missing symbol", append([]string{"raw", "trades", "--output-dir", outputDir}, dates...), "--symbol is required"},
@@ -750,6 +776,9 @@ func TestCLI_Raw_RequiresAKeyWithoutPreview(t *testing.T) {
 func TestCLI_Raw_Help(t *testing.T) {
 	for _, args := range [][]string{{"raw"}, {"raw", "help"}, {"raw", "--help"}, {"raw", "trades", "-h"}} {
 		stdout, _, code := runCLI(args...)
+		if strings.Contains(stdout, "open_interest") {
+			t.Errorf("raw help must not list open interest: %s", stdout)
+		}
 		if code != 0 {
 			t.Errorf("%v: expected exit code 0, got %d", args, code)
 		}
@@ -761,6 +790,9 @@ func TestCLI_Raw_Help(t *testing.T) {
 	}
 
 	stdout, _, _ := runCLI("help")
+	if !strings.Contains(stdout, string(MetricOpenInterest)) {
+		t.Error("expected open-interest metrics to remain in top-level help")
+	}
 	if !strings.Contains(stdout, "aperiodic raw <dataset>") {
 		t.Error("expected the top-level help to list the raw command")
 	}

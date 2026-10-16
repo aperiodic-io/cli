@@ -207,9 +207,8 @@ Raw trades, top-of-book quotes and derivative ticks for Binance, OKX and Hyperli
 | `mark_price`    | Mark price, one row per change               | yes               | yes         | yes                 |
 | `index_price`   | Index price, one row per change              | yes               | yes         | yes                 |
 | `funding_rate`  | Funding rate and next funding time           | yes               | yes         | yes                 |
-| `open_interest` | Open interest, one row per change            | yes               | yes         | yes                 |
 
-Hyperliquid's derivative feed carries no exchange time, so in its `mark_price`, `index_price`, `funding_rate` and `open_interest` files `exchange_timestamp` is modelled, and an `exchange_timestamp_kind` column (`"modelled"`) follows it. Raw L2 order books are not offered.
+Hyperliquid's derivative feed carries no exchange time, so in its `mark_price`, `index_price` and `funding_rate` files `exchange_timestamp` is modelled, and an `exchange_timestamp_kind` column (`"modelled"`) follows it. Raw L2 order books are not offered.
 
 Every file starts with `exchange_timestamp` (the venue's time) and `local_timestamp` (when the event reached our capture machine). Timestamps are UTC.
 
