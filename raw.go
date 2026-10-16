@@ -43,7 +43,7 @@ const (
 
 var (
 	// RawDatasets lists every raw dataset in catalog order.
-	RawDatasets = []RawDataset{RawTrades, RawQuotes, RawMarkPrice, RawIndexPrice, RawFundingRate, RawOpenInterest}
+	RawDatasets = []RawDataset{RawTrades, RawQuotes, RawMarkPrice, RawIndexPrice, RawFundingRate}
 
 	// Exchanges lists every supported exchange.
 	Exchanges = []Exchange{ExchangeBinanceFutures, ExchangeOkxPerps, ExchangeHyperliquidPerps}
@@ -69,7 +69,7 @@ var (
 )
 
 // RawExchanges returns the exchanges a raw dataset is served for: every one.
-// On Hyperliquid, whose feed carries no exchange time, the four derivative
+// On Hyperliquid, whose feed carries no exchange time, the three derivative
 // datasets have a modelled exchange_timestamp and an exchange_timestamp_kind
 // column.
 func RawExchanges(RawDataset) []Exchange {

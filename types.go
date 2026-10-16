@@ -100,12 +100,11 @@ type SymbolsResponse struct {
 type RawDataset string
 
 const (
-	RawTrades       RawDataset = "trades"
-	RawQuotes       RawDataset = "quotes"
-	RawMarkPrice    RawDataset = "mark_price"
-	RawIndexPrice   RawDataset = "index_price"
-	RawFundingRate  RawDataset = "funding_rate"
-	RawOpenInterest RawDataset = "open_interest"
+	RawTrades      RawDataset = "trades"
+	RawQuotes      RawDataset = "quotes"
+	RawMarkPrice   RawDataset = "mark_price"
+	RawIndexPrice  RawDataset = "index_price"
+	RawFundingRate RawDataset = "funding_rate"
 )
 
 type RawFileInfo struct {
