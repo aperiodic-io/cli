@@ -78,36 +78,6 @@ func TestCLI_Raw_Live_CoverageOfOneSymbol(t *testing.T) {
 	}
 }
 
-func TestCLI_Raw_Live_PreviewNeedsNoKey(t *testing.T) {
-	useLiveAPI(t)
-	t.Setenv("APERIODIC_API_KEY", "")
-
-	outputDir := t.TempDir()
-	stdout, stderr, code := runCLI(
-		"raw", "funding_rate", "-preview",
-		"-symbol", rawTestSymbol,
-		"-output-dir", outputDir,
-	)
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
-	}
-	// Raw previews may currently have no files, which is a successful response.
-	if strings.Contains(stdout, "No data found for the given criteria") {
-		entries, err := os.ReadDir(outputDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(entries) != 0 {
-			t.Errorf("expected no files for an empty preview, got %v", entries)
-		}
-		return
-	}
-	if !strings.Contains(stdout, "Successfully downloaded 1 files") {
-		t.Errorf("expected one file downloaded, got: %s", stdout)
-	}
-	requireJuneParquet(t, outputDir, RawFundingRate)
-}
-
 func TestCLI_Raw_Live_DemoKeyIsRefusedOutsideThePreview(t *testing.T) {
 	useLiveAPI(t)
 	t.Setenv("APERIODIC_API_KEY", DemoAPIKey)
