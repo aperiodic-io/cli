@@ -20,6 +20,8 @@ type streamFlags struct {
 	symbols  string
 	count    int
 	duration time.Duration
+	since    string
+	replay   bool
 }
 
 func newStreamFlagSet() (*flag.FlagSet, *streamFlags) {
@@ -28,9 +30,26 @@ func newStreamFlagSet() (*flag.FlagSet, *streamFlags) {
 	fs.StringVar(&f.exchange, "exchange", string(ExchangeBinanceFutures), "Exchange name")
 	fs.StringVar(&f.interval, "interval", string(Interval1m), "Aggregation interval")
 	fs.StringVar(&f.symbols, "symbols", "", "Comma-separated symbols, e.g. perpetual-BTC-USDT:USDT (default: every symbol your plan allows)")
-	fs.IntVar(&f.count, "count", 0, "Stop after this many live rows; snapshot rows are printed but not counted (0: no limit)")
+	fs.IntVar(&f.count, "count", 0, "Stop after this many live rows; snapshot and replayed rows are printed but not counted (0: no limit)")
 	fs.DurationVar(&f.duration, "duration", 0, "Stop after this long, e.g. 90s or 1h (0: no limit)")
+	fs.StringVar(&f.since, "since", "", "Replay the bars from this time on before the live rows: an RFC 3339 time, e.g. 2026-11-09T10:00:00Z, or how long ago, e.g. 30m (1m and longer intervals)")
+	fs.BoolVar(&f.replay, "replay", true, "After a reconnect, replay the bars missed while disconnected (1m and longer intervals)")
 	return fs, f
+}
+
+// parseSince reads --since: an RFC 3339 time, or a duration back from now.
+func parseSince(value string, now time.Time) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	if at, err := time.Parse(time.RFC3339, value); err == nil {
+		return at, nil
+	}
+	ago, err := time.ParseDuration(value)
+	if err != nil || ago <= 0 {
+		return time.Time{}, fmt.Errorf("--since must be an RFC 3339 time or a positive duration such as 30m, got %q", value)
+	}
+	return now.Add(-ago), nil
 }
 
 func (c *CLI) runStream(args []string) int {
@@ -58,6 +77,17 @@ func (c *CLI) runStream(args []string) int {
 	case f.duration < 0:
 		fmt.Fprintln(c.Stderr, "Error: --duration must not be negative")
 		return 1
+	}
+	since, err := parseSince(f.since, time.Now())
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	if !since.IsZero() {
+		if _, ok := streamReplaySteps[f.interval]; !ok {
+			fmt.Fprintf(c.Stderr, "Error: --since needs an interval of 1m or longer, got %s\n", f.interval)
+			return 1
+		}
 	}
 
 	apiKey := c.Env("APERIODIC_API_KEY")
@@ -102,7 +132,7 @@ func (c *CLI) runStream(args []string) int {
 				fmt.Fprintf(c.Stderr, "Warning: skipping a row: %v\n", err)
 				return true
 			}
-			if !row.Snapshot {
+			if !row.Snapshot && !row.Replay {
 				live++
 			}
 			return f.count == 0 || live < f.count
@@ -123,6 +153,23 @@ func (c *CLI) runStream(args []string) int {
 				fmt.Fprintf(c.Stderr, "Rejected: %s (%s): %s\n", r.Channel, r.Code, r.Message)
 			}
 		},
+		Replayed: func(r StreamReplay) {
+			if r.Unavailable {
+				fmt.Fprintf(c.Stderr, "Replay unavailable for %s: fill the gap from the REST API\n", r.Channel)
+				return
+			}
+			fmt.Fprintf(c.Stderr, "Replayed %s: %d bars, %d rows", r.Channel, r.Bars, r.Rows)
+			if r.Bars > 0 && r.To != nil {
+				fmt.Fprintf(c.Stderr, " (%s to %s)", formatBarTime(r.From), formatBarTime(*r.To))
+			}
+			if len(r.Missing) > 0 {
+				fmt.Fprintf(c.Stderr, "; %d bars the server does not hold", len(r.Missing))
+			}
+			if r.Truncated {
+				fmt.Fprint(c.Stderr, "; more to come")
+			}
+			fmt.Fprintln(c.Stderr)
+		},
 		ServerErr: func(code, message string) {
 			fmt.Fprintf(c.Stderr, "Warning: server error %s: %s\n", code, message)
 		},
@@ -135,7 +182,10 @@ func (c *CLI) runStream(args []string) int {
 		},
 	})
 
-	err := streamer.Run(ctx)
+	streamer.Since = since
+	streamer.Replay = f.replay
+
+	err = streamer.Run(ctx)
 	if sig, ok := interrupted.Load().(os.Signal); ok {
 		return signalExitCode(sig)
 	}
@@ -151,6 +201,10 @@ func (c *CLI) runStream(args []string) int {
 		fmt.Fprintf(c.Stderr, "Error: %v\n", err)
 	}
 	return 1
+}
+
+func formatBarTime(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
 
 // signalExitCode follows the shell convention of 128 + the signal number.
@@ -172,8 +226,11 @@ func (c *CLI) printStreamUsage() {
 	fmt.Fprintln(out, `  {"channel":"ohlcv.binance-futures.1m","snapshot":false,"data":{...}}`)
 	fmt.Fprintln(out, "Snapshot rows (the latest row per symbol, sent on subscribe on some plans)")
 	fmt.Fprintln(out, "have \"snapshot\":true. Subscriptions, rejections, reconnects and warnings go")
-	fmt.Fprintln(out, "to stderr. Delivery is at most once: rows missed while reconnecting are not")
-	fmt.Fprintln(out, "replayed. Exits 1 if the key is refused, the plan has no live access, the")
+	fmt.Fprintln(out, "to stderr. After a reconnect, the bars missed meanwhile are replayed first")
+	fmt.Fprintln(out, "(1m and longer intervals, as far back as the server keeps them), marked")
+	fmt.Fprintln(out, "\"replay\":true; --since replays from a time of your choosing. A row can")
+	fmt.Fprintln(out, "come twice; it has the same key, so overwrite it. Exits 1 if the key is")
+	fmt.Fprintln(out, "refused, the plan has no live access, the")
 	fmt.Fprintln(out, "connection limit is reached on the first connect, no channel is (or stays)")
 	fmt.Fprintln(out, "subscribed, or the server ends the session for good. Ctrl-C exits 130,")
 	fmt.Fprintln(out, "SIGTERM 143.")
