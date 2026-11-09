@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -159,7 +160,9 @@ func TestLoginSavesAKeyOnlyThisUserCanRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows has no permission bits: Go reports any writable file as 0666, and
+	// the file is kept private by the ACL of the user's profile (%APPDATA%).
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("credentials mode %v, want 0600", info.Mode().Perm())
 	}
 }
