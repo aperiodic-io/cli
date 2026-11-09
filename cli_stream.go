@@ -60,9 +60,9 @@ func (c *CLI) runStream(args []string) int {
 		return 1
 	}
 
-	apiKey := c.Env("APERIODIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set")
+	apiKey, _, ok := c.findAPIKey()
+	if !ok {
+		fmt.Fprintln(c.Stderr, missingKeyMessage)
 		return 1
 	}
 

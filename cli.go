@@ -4,21 +4,45 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"time"
 )
 
 type CLI struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Env    func(string) string
+	// OpenURL opens a link in the browser; login falls back to printing it.
+	OpenURL func(string) error
+	// HTTPClient, Sleep and Now let tests drive login without waiting.
+	HTTPClient *http.Client
+	Sleep      func(time.Duration)
+	Now        func() time.Time
 }
 
 func NewCLI() *CLI {
 	return &CLI{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-		Env:    os.Getenv,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		Env:     os.Getenv,
+		OpenURL: openBrowser,
 	}
+}
+
+func (c *CLI) sleep(d time.Duration) {
+	if c.Sleep != nil {
+		c.Sleep(d)
+		return
+	}
+	time.Sleep(d)
+}
+
+func (c *CLI) now() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
 }
 
 func (c *CLI) Run(args []string) int {
@@ -31,6 +55,15 @@ func (c *CLI) Run(args []string) int {
 	if isHelpArg(cmd) {
 		c.printUsage()
 		return 0
+	}
+
+	switch cmd {
+	case "login":
+		return c.runLogin(args[1:])
+	case "logout":
+		return c.runLogout(args[1:])
+	case "whoami":
+		return c.runWhoami(args[1:])
 	}
 
 	if cmd == "raw" {
@@ -80,17 +113,18 @@ func isHelpArg(arg string) bool {
 	return arg == "help" || arg == "-h" || arg == "--help"
 }
 
-// resolveAPIKey returns APERIODIC_API_KEY or, for a preview request without
-// one, the shared demo key. It reports the missing key itself.
+// resolveAPIKey returns APERIODIC_API_KEY, else the key `aperiodic login`
+// saved, else, for a preview request, the shared demo key. It reports the
+// missing key itself.
 func (c *CLI) resolveAPIKey(preview bool) (string, bool) {
-	if apiKey := c.Env("APERIODIC_API_KEY"); apiKey != "" {
+	if apiKey, _, ok := c.findAPIKey(); ok {
 		return apiKey, true
 	}
 	if preview {
 		// Preview data is served against the shared demo key, so no key is required.
 		return DemoAPIKey, true
 	}
-	fmt.Fprintln(c.Stderr, "Error: APERIODIC_API_KEY environment variable not set (pass --preview to use the shared demo key)")
+	fmt.Fprintln(c.Stderr, "Error: no API key. Run 'aperiodic login', set APERIODIC_API_KEY, or pass --preview for the free sample.")
 	return "", false
 }
 
@@ -98,6 +132,7 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "Aperiodic CLI Client")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Usage:")
+	fmt.Fprintln(c.Stdout, "  aperiodic login [--no-browser] [--name NAME]")
 	fmt.Fprintln(c.Stdout, "  aperiodic <metric> [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic symbols [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic raw <dataset> [flags]")
@@ -126,13 +161,16 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "  derivative_price  Derivative price")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Commands:")
+	fmt.Fprintln(c.Stdout, "  login    Sign in and save a key for this machine (works over SSH too)")
+	fmt.Fprintln(c.Stdout, "  logout   Revoke this machine's key and remove it")
+	fmt.Fprintln(c.Stdout, "  whoami   Show which key is in use and what the plan covers")
 	fmt.Fprintln(c.Stdout, "  symbols  List available symbols for an exchange")
 	fmt.Fprintln(c.Stdout, "  raw      Download raw trades, quotes and derivative ticks (Prime + Raw plan; see 'aperiodic raw help')")
 	fmt.Fprintln(c.Stdout, "  stream   Stream live rows over WebSocket as JSON lines (see 'aperiodic stream help')")
 	fmt.Fprintln(c.Stdout, "  help     Show this help")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Environment:")
-	fmt.Fprintln(c.Stdout, "  APERIODIC_API_KEY  Aperiodic API key (required, except with --preview)")
+	fmt.Fprintln(c.Stdout, "  APERIODIC_API_KEY  Aperiodic API key; used before the key 'aperiodic login' saved")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Flags:")
 	fmt.Fprintln(c.Stdout, "  -end-date string")

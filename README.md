@@ -34,13 +34,28 @@ chmod +x aperiodic
 
 ## Authentication
 
-Set your API key as an environment variable:
+Sign in once per machine:
 
 ```bash
-export APERIODIC_API_KEY=your_api_key
+aperiodic login
 ```
 
-Get your API key at [aperiodic.io](https://aperiodic.io).
+It opens your browser, or, over SSH or on a machine without a display, prints a link to open on any device. Check the code there matches the one in your terminal and allow it. A free account works: it covers every metric for 2025.
+
+The machine gets a key of its own, named after it and saved in `~/.config/aperiodic/credentials` (readable only by you; `%APPDATA%\aperiodic` on Windows, or `$APERIODIC_CONFIG_DIR`). The Python client reads the same file. See and revoke each machine's key at [aperiodic.io/home/api](https://aperiodic.io/home/api).
+
+```bash
+aperiodic whoami   # which key is in use, and what the plan covers
+aperiodic logout   # revoke this machine's key and remove it
+```
+
+For scheduled jobs, CI and containers, set a key instead. Make a named key for the job at [aperiodic.io/home/api](https://aperiodic.io/home/api):
+
+```bash
+export APERIODIC_API_KEY=apk_…
+```
+
+`APERIODIC_API_KEY` is used before the saved key.
 
 For [preview data](#preview-data) (`--preview`), no API key is required — the CLI uses the shared public demo key automatically.
 
