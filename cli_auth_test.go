@@ -74,7 +74,7 @@ func (f *fakeAperiodic) handler(t *testing.T) http.Handler {
 		}
 		_, _ = w.Write([]byte(`{"plan":"loggedInNoSubscription","plan_name":"Free",
 			"key":{"kind":"named","name":"research-vm (aperiodic CLI)","hint":"keyt"},
-			"covers":{"datasets_in_full":19,"datasets_total":19,"history":"History for 2025","venues":["Binance"],"live":"Delayed live stream"}}`))
+			"covers":{"datasets_in_full":19,"datasets_total":19,"history":"History for 2025","venues":["Binance"],"markets":"BTC, ETH, SOL and 10 RWA perps","live":"Delayed live stream"}}`))
 	})
 	mux.HandleFunc("DELETE /api/v1/cli/key", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -254,7 +254,7 @@ func TestWhoamiSaysWhichKeyAndWhatThePlanCovers(t *testing.T) {
 		t.Fatalf("whoami exit %d: %s", code, h.stderr)
 	}
 	out := h.stdout.String()
-	for _, want := range []string{"Free", "research-vm (aperiodic CLI)", "19 of 19", "History for 2025", "Delayed live stream"} {
+	for _, want := range []string{"Free", "research-vm (aperiodic CLI)", "19 of 19", "Markets:  BTC, ETH, SOL and 10 RWA perps", "History for 2025", "Delayed live stream"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("whoami output lacks %q:\n%s", want, out)
 		}

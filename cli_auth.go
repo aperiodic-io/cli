@@ -50,6 +50,7 @@ type whoami struct {
 		DatasetsTotal  int      `json:"datasets_total"`
 		History        string   `json:"history"`
 		Venues         []string `json:"venues"`
+		Markets        string   `json:"markets"`
 		Live           string   `json:"live"`
 	} `json:"covers"`
 }
@@ -283,6 +284,9 @@ func (c *CLI) runWhoami(args []string) int {
 	fmt.Fprintf(c.Stdout, "Plan:     %s\n", me.PlanName)
 	fmt.Fprintf(c.Stdout, "Key:      %s, from %s\n", key, source)
 	fmt.Fprintf(c.Stdout, "Datasets: %d of %d in full\n", me.Covers.DatasetsInFull, me.Covers.DatasetsTotal)
+	if me.Covers.Markets != "" {
+		fmt.Fprintf(c.Stdout, "Markets:  %s\n", me.Covers.Markets)
+	}
 	if me.Covers.History != "" {
 		fmt.Fprintf(c.Stdout, "History:  %s\n", me.Covers.History)
 	}
