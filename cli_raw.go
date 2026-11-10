@@ -153,7 +153,7 @@ func (c *CLI) runRawDownload(args []string) int {
 		}
 	}
 
-	apiKey, ok := c.resolveAPIKey(query.Preview)
+	apiKey, source, ok := c.resolveAPIKey(query.Preview)
 	if !ok {
 		return 1
 	}
@@ -161,7 +161,9 @@ func (c *CLI) runRawDownload(args []string) int {
 
 	listing, err := client.FetchRawFiles(query, start, end)
 	if err != nil {
-		c.reportRawAPIError("Error fetching raw file URLs", err, query.Preview)
+		if !c.reportRejectedKey(statusOf(err), source) {
+			c.reportRawAPIError("Error fetching raw file URLs", err, query.Preview)
+		}
 		return 1
 	}
 
