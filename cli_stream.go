@@ -60,7 +60,7 @@ func (c *CLI) runStream(args []string) int {
 		return 1
 	}
 
-	apiKey, _, ok := c.findAPIKey()
+	apiKey, keySource, ok := c.findAPIKey()
 	if !ok {
 		fmt.Fprintln(c.Stderr, missingKeyMessage)
 		return 1
@@ -145,6 +145,7 @@ func (c *CLI) runStream(args []string) int {
 
 	var handshake *StreamHandshakeError
 	switch {
+	case c.reportRejectedKey(statusOf(err), keySource):
 	case errors.As(err, &handshake):
 		fmt.Fprintf(c.Stderr, "Error connecting to the stream: %v\n", handshake)
 	default:

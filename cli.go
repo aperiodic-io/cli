@@ -15,10 +15,12 @@ type CLI struct {
 	Env    func(string) string
 	// OpenURL opens a link in the browser; login falls back to printing it.
 	OpenURL func(string) error
-	// HTTPClient, Sleep and Now let tests drive login without waiting.
-	HTTPClient *http.Client
-	Sleep      func(time.Duration)
-	Now        func() time.Time
+
+	// client, sleepFunc and nowFunc let the package's tests drive login
+	// without waiting; nil means the real ones.
+	client    *http.Client
+	sleepFunc func(time.Duration)
+	nowFunc   func() time.Time
 }
 
 func NewCLI() *CLI {
@@ -31,16 +33,16 @@ func NewCLI() *CLI {
 }
 
 func (c *CLI) sleep(d time.Duration) {
-	if c.Sleep != nil {
-		c.Sleep(d)
+	if c.sleepFunc != nil {
+		c.sleepFunc(d)
 		return
 	}
 	time.Sleep(d)
 }
 
 func (c *CLI) now() time.Time {
-	if c.Now != nil {
-		return c.Now()
+	if c.nowFunc != nil {
+		return c.nowFunc()
 	}
 	return time.Now()
 }
@@ -90,7 +92,7 @@ func (c *CLI) Run(args []string) int {
 		return 2
 	}
 
-	apiKey, ok := c.resolveAPIKey(*previewFlag)
+	apiKey, source, ok := c.resolveAPIKey(*previewFlag)
 	if !ok {
 		return 1
 	}
@@ -98,7 +100,7 @@ func (c *CLI) Run(args []string) int {
 	client := NewAperiodicClient(apiKey)
 
 	if cmd == "symbols" {
-		return c.handleSymbols(client, *exchangeFlag)
+		return c.handleSymbols(client, *exchangeFlag, source)
 	}
 
 	if *outputDirFlag == "" {
@@ -106,33 +108,36 @@ func (c *CLI) Run(args []string) int {
 		return 1
 	}
 
-	return c.handleData(client, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *outputDirFlag, *previewFlag)
+	return c.handleData(client, source, cmd, *timestampFlag, *intervalFlag, *exchangeFlag, *symbolFlag, *startDateFlag, *endDateFlag, *maxConcurrentFlag, *outputDirFlag, *previewFlag)
 }
 
 func isHelpArg(arg string) bool {
 	return arg == "help" || arg == "-h" || arg == "--help"
 }
 
-// resolveAPIKey returns APERIODIC_API_KEY, else the key `aperiodic login`
-// saved, else, for a preview request, the shared demo key. It reports the
-// missing key itself.
-func (c *CLI) resolveAPIKey(preview bool) (string, bool) {
-	if apiKey, _, ok := c.findAPIKey(); ok {
-		return apiKey, true
+// resolveAPIKey returns APERIODIC_API_KEY, else, for a preview request, the
+// shared demo key, else the key `aperiodic login` saved, with where it came
+// from. A saved key never answers a preview request, so a revoked one cannot
+// break the free sample. It reports the missing key itself.
+func (c *CLI) resolveAPIKey(preview bool) (apiKey, source string, ok bool) {
+	if apiKey := c.Env("APERIODIC_API_KEY"); apiKey != "" {
+		return apiKey, "APERIODIC_API_KEY", true
 	}
 	if preview {
-		// Preview data is served against the shared demo key, so no key is required.
-		return DemoAPIKey, true
+		return DemoAPIKey, "the shared demo key", true
+	}
+	if apiKey, source, ok := c.findAPIKey(); ok {
+		return apiKey, source, true
 	}
 	fmt.Fprintln(c.Stderr, "Error: no API key. Run 'aperiodic login', set APERIODIC_API_KEY, or pass --preview for the free sample.")
-	return "", false
+	return "", "", false
 }
 
 func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "Aperiodic CLI Client")
 	fmt.Fprintln(c.Stdout)
 	fmt.Fprintln(c.Stdout, "Usage:")
-	fmt.Fprintln(c.Stdout, "  aperiodic login [--no-browser] [--name NAME]")
+	fmt.Fprintln(c.Stdout, "  aperiodic login [--no-browser] [--name NAME] [--force]")
 	fmt.Fprintln(c.Stdout, "  aperiodic <metric> [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic symbols [flags]")
 	fmt.Fprintln(c.Stdout, "  aperiodic raw <dataset> [flags]")
@@ -193,10 +198,12 @@ func (c *CLI) printUsage() {
 	fmt.Fprintln(c.Stdout, "        Timestamp source (exchange, true) (default \"exchange\")")
 }
 
-func (c *CLI) handleSymbols(client *AperiodicClient, exchange string) int {
+func (c *CLI) handleSymbols(client *AperiodicClient, exchange, keySource string) int {
 	symbols, err := client.GetSymbols(exchange)
 	if err != nil {
-		fmt.Fprintf(c.Stderr, "Error fetching symbols: %v\n", err)
+		if !c.reportRejectedKey(statusOf(err), keySource) {
+			fmt.Fprintf(c.Stderr, "Error fetching symbols: %v\n", err)
+		}
 		return 1
 	}
 
@@ -207,7 +214,7 @@ func (c *CLI) handleSymbols(client *AperiodicClient, exchange string) int {
 	return 0
 }
 
-func (c *CLI) handleData(client *AperiodicClient, metric, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, outputDir string, preview bool) int {
+func (c *CLI) handleData(client *AperiodicClient, keySource, metric, timestamp, interval, exchange, symbol, startDate, endDate string, maxConcurrent int, outputDir string, preview bool) int {
 	if symbol == "" {
 		fmt.Fprintln(c.Stderr, "Error: --symbol is required")
 		return 1
@@ -219,7 +226,9 @@ func (c *CLI) handleData(client *AperiodicClient, metric, timestamp, interval, e
 
 	resp, err := client.FetchPresignedUrls(metric, TimestampType(timestamp), Interval(interval), exchange, symbol, startDate, endDate, preview)
 	if err != nil {
-		fmt.Fprintf(c.Stderr, "Error fetching file URLs: %v\n", err)
+		if !c.reportRejectedKey(statusOf(err), keySource) {
+			fmt.Fprintf(c.Stderr, "Error fetching file URLs: %v\n", err)
+		}
 		return 1
 	}
 

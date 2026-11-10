@@ -7,18 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 )
 
 // Credentials is what `aperiodic login` saves: a named key of this machine's
 // own, revocable on its own at aperiodic.io/home/api. The Python client reads
-// the same file.
+// and writes the same file. Everything but api_key is a note for people, kept
+// as text so that no other writer's format can make the key unreadable.
 type Credentials struct {
-	APIKey    string    `json:"api_key"`
-	KeyName   string    `json:"key_name,omitempty"`
-	Plan      string    `json:"plan,omitempty"`
-	PlanName  string    `json:"plan_name,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	APIKey    string `json:"api_key"`
+	KeyName   string `json:"key_name,omitempty"`
+	Plan      string `json:"plan,omitempty"`
+	PlanName  string `json:"plan_name,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 // CredentialsPath is where the key is kept: $APERIODIC_CONFIG_DIR, else
@@ -83,11 +83,25 @@ func SaveCredentials(env func(string) string, creds Credentials) (string, error)
 	if err != nil {
 		return "", err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	// A fresh temporary file per write: two logins at once cannot share it,
+	// and no stale file left behind lends it a looser mode.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "credentials-*")
+	if err != nil {
 		return "", fmt.Errorf("writing %s: %w", path, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
+		tmp.Close()
+		return "", fmt.Errorf("writing %s: %w", path, err)
+	}
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return "", fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return "", fmt.Errorf("writing %s: %w", path, err)
 	}
 	return path, nil
