@@ -251,3 +251,109 @@ func TestStream_NoSinceBelowAMinuteOnReconnect(t *testing.T) {
 		t.Errorf("expected no since at 15s, got %d", got)
 	}
 }
+
+func emptyTruncatedFrame(id string, from int64) string {
+	return `{"op":"replayed","id":"` + id + `","channel":"` + streamTestChannel + `","from":` + strconv.FormatInt(from, 10) +
+		`,"to":null,"bars":0,"rows":0,"missing":[],"truncated":true}`
+}
+
+// The size cap is shared by a subscribe's channels: one can leave another
+// with no bars and no `to`. It is asked for again from `from`; empty a second
+// time from the same bar, that bar is larger than the cap, and the stream
+// stops asking.
+func TestStream_EmptyTruncatedReplayIsAskedAgainThenGivenUp(t *testing.T) {
+	from := barMicros / 1000
+	followUp := make(chan fakeSubscribe, 1)
+	startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, _ int) {
+			ack(ctx, conn, sub, "")
+			send(ctx, conn, emptyTruncatedFrame(sub.ID, from))
+			next := readSubscribe(ctx, t, conn)
+			followUp <- next
+			send(ctx, conn, emptyTruncatedFrame(next.ID, from))
+			send(ctx, conn, row("2"))
+			drain(ctx, conn)
+		},
+	})
+
+	_, stderr, code := runCLI("stream", "ohlcv", "--since", "1h", "--count", "1", "--duration", "10s")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	if next := <-followUp; next.Channels[0].Since != from {
+		t.Errorf("expected the follow-up from the empty replay's from %d, got %+v", from, next)
+	}
+	if !strings.Contains(stderr, "larger than the server's replay cap") {
+		t.Errorf("expected the stop on stderr, got: %s", stderr)
+	}
+	if strings.Count(stderr, "more to come") != 1 {
+		t.Errorf("expected more to come only for the first replay, got: %s", stderr)
+	}
+}
+
+// Held live rows come before `replayed`, so the newest bar received runs
+// ahead of a replay still catching up; a drop then must not skip the rest.
+func TestStream_DropDuringACatchUpResumesWhereTheReplayGotTo(t *testing.T) {
+	from := barMicros / 1000
+	f := startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, n int) {
+			ack(ctx, conn, sub, "")
+			if n == 1 {
+				send(ctx, conn, replayFrame(from, `{"symbol":"perpetual-BTC-USDT:USDT","time":1791307260000000}`))
+				send(ctx, conn, `{"channel":"`+streamTestChannel+`","data":{"symbol":"perpetual-BTC-USDT:USDT","time":1791307860000000,"close":1}}`)
+				send(ctx, conn, replayedFrame(sub.ID, from, from, 1, 1, true))
+				readSubscribe(ctx, t, conn)
+				conn.CloseNow()
+				return
+			}
+			send(ctx, conn, row("3"))
+			drain(ctx, conn)
+		},
+	})
+
+	_, stderr, code := runCLI("stream", "ohlcv", "--since", "1h", "--count", "2", "--duration", "10s")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	_, _, subs := f.recorded()
+	if len(subs) != 2 {
+		t.Fatalf("expected two subscribes, got %d", len(subs))
+	}
+	if got := subs[1].Channels[0].Since; got != from+60_000 {
+		t.Errorf("expected the reconnect to resume the replay from %d, got %d", from+60_000, got)
+	}
+}
+
+func TestStream_RefusedFollowUpIsSentAgain(t *testing.T) {
+	base := streamBusyRetryBase
+	streamBusyRetryBase = 10 * time.Millisecond
+	t.Cleanup(func() { streamBusyRetryBase = base })
+
+	from := barMicros / 1000
+	followUps := make(chan fakeSubscribe, 2)
+	startFakeStream(t, &fakeStream{
+		script: func(ctx context.Context, conn *websocket.Conn, sub fakeSubscribe, _ int) {
+			ack(ctx, conn, sub, "")
+			send(ctx, conn, replayFrame(from, `{"symbol":"perpetual-BTC-USDT:USDT","time":1791307260000000}`))
+			send(ctx, conn, replayedFrame(sub.ID, from, from, 1, 1, true))
+			first := readSubscribe(ctx, t, conn)
+			followUps <- first
+			send(ctx, conn, `{"op":"error","id":"`+first.ID+`","code":"limit_exceeded","message":"At most 4 replays can be queued on a connection"}`)
+			followUps <- readSubscribe(ctx, t, conn)
+			send(ctx, conn, row("2"))
+			drain(ctx, conn)
+		},
+	})
+
+	_, stderr, code := runCLI("stream", "ohlcv", "--since", "1h", "--count", "1", "--duration", "10s")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d; stderr: %s", code, stderr)
+	}
+	first, second := <-followUps, <-followUps
+	if first.Channels[0].Since != from+60_000 || second.Channels[0].Since != from+60_000 {
+		t.Errorf("expected the refused follow-up sent again from %d, got %+v then %+v", from+60_000, first, second)
+	}
+	if strings.Contains(stderr, "limit_exceeded") {
+		t.Errorf("expected the refusal handled, not warned, got: %s", stderr)
+	}
+}
