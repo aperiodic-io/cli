@@ -25,8 +25,10 @@ const (
 	// for longer than this is treated as dropped.
 	streamIdleTimeout = 75 * time.Second
 	streamDialTimeout = 15 * time.Second
-	// A replay frame carries one whole bar: on an all-symbols channel that is
-	// over a megabyte. The server caps one subscribe's replay at a few MB.
+	// The server splits a replayed bar into small frames, but one row can be
+	// larger, and earlier servers sent a whole bar (over a megabyte on an
+	// all-symbols channel) in one frame. The server caps one subscribe's
+	// replay at a few MB.
 	streamMessageLimit = 16 << 20
 
 	// How often a subscribe refused because the server is busy replaying is
@@ -93,6 +95,9 @@ type StreamReplay struct {
 	Missing     []int64
 	Truncated   bool
 	Unavailable bool
+	// FollowedUp is true when the stream asks for the rest of a truncated
+	// replay; a truncated one without it stopped, and the rest is for REST.
+	FollowedUp bool
 }
 
 type streamFrame struct {
@@ -106,6 +111,7 @@ type streamFrame struct {
 	Channel  string          `json:"channel"`
 	Snapshot bool            `json:"snapshot"`
 	Replay   bool            `json:"replay"`
+	Time     int64           `json:"time"`
 	Data     json.RawMessage `json:"data"`
 
 	From        int64   `json:"from"`
@@ -190,6 +196,11 @@ type Streamer struct {
 	// replay starts.
 	lastBar      map[string]int64
 	subscribedAt time.Time
+	// replayFrom is each channel whose replay is not finished, and the bar
+	// to ask from if it must be asked for again. A drop resumes from here,
+	// not from lastBar: held live rows come before the replay's end, so
+	// lastBar runs ahead of a replay still catching up.
+	replayFrom map[string]int64
 }
 
 // NewStreamer reads APERIODIC_STREAM_URL and the Cloudflare Access service
@@ -225,6 +236,8 @@ func (s *Streamer) subscribeChannels(resume bool) []StreamChannel {
 		switch {
 		case !resume && !s.Since.IsZero():
 			channels[i].Since = s.Since.UnixMilli()
+		case resume && s.Replay && s.replayFrom[ch.name()] > 0:
+			channels[i].Since = s.replayFrom[ch.name()]
 		case resume && s.Replay && s.lastBar[ch.name()] > 0:
 			channels[i].Since = s.lastBar[ch.name()]
 		case resume && s.Replay && !s.subscribedAt.IsZero():
@@ -234,6 +247,49 @@ func (s *Streamer) subscribeChannels(resume bool) []StreamChannel {
 		}
 	}
 	return channels
+}
+
+// expectReplays records where each channel subscribed with a since replays
+// from, until its replay is finished.
+func (s *Streamer) expectReplays(channels []StreamChannel) {
+	if s.replayFrom == nil {
+		s.replayFrom = map[string]int64{}
+	}
+	for _, ch := range channels {
+		if ch.Since > 0 {
+			s.replayFrom[ch.name()] = ch.Since
+		}
+	}
+}
+
+// nextReplay decides whether a replayed channel needs a follow-up, and from
+// which bar. A truncated replay goes on from the bar after its last; one
+// left with no bars by the size cap a subscribe's channels share (To nil)
+// goes on from From; empty again from the same bar, alone, that bar is
+// larger than the cap, and why says so.
+func (s *Streamer) nextReplay(frame streamFrame, stalled map[string]int64, continuations int) (since int64, follow bool, why string) {
+	step, replayable := streamReplaySteps[channelInterval(frame.Channel)]
+	if !frame.Truncated || !replayable {
+		return 0, false, ""
+	}
+	if _, tracked := s.replayFrom[frame.Channel]; !tracked {
+		return 0, false, ""
+	}
+	switch {
+	case frame.To != nil:
+		since = *frame.To + step
+		delete(stalled, frame.Channel)
+	case stalled[frame.Channel] != frame.From:
+		since = frame.From
+		stalled[frame.Channel] = frame.From
+	default:
+		return 0, false, fmt.Sprintf("a bar of %s is larger than the server's replay cap; fetch it and what follows from the REST API", frame.Channel)
+	}
+	if continuations >= streamMaxContinuation {
+		return 0, false, fmt.Sprintf("the replay of %s is still cut short after %d follow-ups; fill it from %s from the REST API",
+			frame.Channel, streamMaxContinuation, time.UnixMilli(since).UTC().Format(time.RFC3339))
+	}
+	return since, true, ""
 }
 
 // noteBar records a row's bar time, so a reconnect replays from it.
@@ -388,9 +444,28 @@ func (s *Streamer) session(ctx context.Context, resume bool) (res sessionResult)
 		return res
 	}
 	s.subscribedAt = time.Now()
+	s.expectReplays(channels)
 
 	granted := map[string]bool{}
-	busyRetries, continuations := 0, 0
+	busyRetries, continuations, refusals := 0, 0, 0
+	// followUps maps a follow-up's id to its channel; stalled is the bar a
+	// replay came back empty from (the size cap a subscribe's channels share
+	// can leave a later one with nothing).
+	followUps := map[string]string{}
+	stalled := map[string]int64{}
+	followUp := func(channel string, since int64) error {
+		ch, ok := s.channelNamed(channel)
+		if !ok {
+			delete(s.replayFrom, channel)
+			return nil
+		}
+		continuations++
+		id := fmt.Sprintf("r%d", continuations)
+		ch.Since = since
+		followUps[id] = channel
+		s.replayFrom[channel] = since
+		return write(id, []StreamChannel{ch})
+	}
 	for {
 		msg, err := readStreamMessage(conn)
 		if err != nil {
@@ -423,6 +498,9 @@ func (s *Streamer) session(ctx context.Context, resume bool) (res sessionResult)
 				continue
 			}
 			res.healthy = true
+			if from, ok := s.replayFrom[frame.Channel]; ok && frame.Time > from {
+				s.replayFrom[frame.Channel] = frame.Time
+			}
 			for _, data := range rows {
 				s.noteBar(frame.Channel, data)
 				if !s.Handlers.Row(StreamRow{Channel: frame.Channel, Replay: true, Data: data}) {
@@ -443,24 +521,52 @@ func (s *Streamer) session(ctx context.Context, resume bool) (res sessionResult)
 				return res
 			}
 		case frame.Op == "replayed":
+			since, follow, why := s.nextReplay(frame, stalled, continuations)
 			if s.Handlers.Replayed != nil {
 				s.Handlers.Replayed(StreamReplay{
 					Channel: frame.Channel, From: frame.From, To: frame.To, Bars: frame.Bars, Rows: frame.Rows,
 					Missing: frame.Missing, Truncated: frame.Truncated, Unavailable: frame.Unavailable,
+					FollowedUp: follow,
 				})
 			}
-			// The server stopped at its size cap: ask for the rest, from the
-			// bar after the last one sent.
-			step, replayable := streamReplaySteps[channelInterval(frame.Channel)]
-			if frame.Truncated && frame.To != nil && replayable && continuations < streamMaxContinuation {
-				if ch, ok := s.channelNamed(frame.Channel); ok {
-					continuations++
-					ch.Since = *frame.To + step
-					if err := write(fmt.Sprintf("r%d", continuations), []StreamChannel{ch}); err != nil {
-						res.err = err
-						return res
-					}
+			if why != "" && s.Handlers.ServerErr != nil {
+				s.Handlers.ServerErr("replay_stopped", why)
+			}
+			if !follow {
+				delete(s.replayFrom, frame.Channel)
+				continue
+			}
+			if err := followUp(frame.Channel, since); err != nil {
+				res.err = err
+				return res
+			}
+		case frame.Op == "error" && frame.Code == "limit_exceeded" && followUps[frame.ID] != "":
+			// A follow-up refused while the server is busy: send it again
+			// after a jittered pause, then give the rest up to REST.
+			channel := followUps[frame.ID]
+			delete(followUps, frame.ID)
+			since, ok := s.replayFrom[channel]
+			if !ok {
+				continue
+			}
+			refusals++
+			if refusals > streamBusyRetries {
+				delete(s.replayFrom, channel)
+				if s.Handlers.ServerErr != nil {
+					s.Handlers.ServerErr(frame.Code, fmt.Sprintf("the server stayed too busy to finish replaying %s; fill it from %s from the REST API",
+						channel, time.UnixMilli(since).UTC().Format(time.RFC3339)))
 				}
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				res.err = ctx.Err()
+				return res
+			case <-time.After(streamBusyRetryBase + rand.N(streamBusyRetryBase+1)):
+			}
+			if err := followUp(channel, since); err != nil {
+				res.err = err
+				return res
 			}
 		case frame.Op == "error" && frame.ID == streamSubscribeID && frame.Code == "limit_exceeded" && hasSince(channels):
 			// Too many replays at once on the server (as after it restarts):
@@ -468,6 +574,7 @@ func (s *Streamer) session(ctx context.Context, resume bool) (res sessionResult)
 			busyRetries++
 			if busyRetries > streamBusyRetries {
 				channels = withoutSince(channels)
+				clear(s.replayFrom)
 				if s.Handlers.ServerErr != nil {
 					s.Handlers.ServerErr(frame.Code, "the server stayed too busy to replay; subscribing without it")
 				}

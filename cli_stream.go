@@ -165,7 +165,7 @@ func (c *CLI) runStream(args []string) int {
 			if len(r.Missing) > 0 {
 				fmt.Fprintf(c.Stderr, "; %d bars the server does not hold", len(r.Missing))
 			}
-			if r.Truncated {
+			if r.FollowedUp {
 				fmt.Fprint(c.Stderr, "; more to come")
 			}
 			fmt.Fprintln(c.Stderr)
