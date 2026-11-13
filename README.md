@@ -69,7 +69,9 @@ So [preview data](#preview-data) (`--preview`) needs no API key, and a saved key
 
 ## Use it from an AI agent (MCP)
 
-Aperiodic also runs a remote MCP server at `https://aperiodic.io/mcp`, for Claude, ChatGPT, Cursor and other agents. Setup: https://aperiodic.io/mcp
+Aperiodic also runs a remote MCP server at `https://aperiodic.io/mcp`, for Claude, ChatGPT, Cursor and other agents.
+
+Add it to [Claude](https://claude.ai/directory/aperiodic) · [ChatGPT](https://chatgpt.com/plugins/plugin_asdk_app_6af18fffeccc8191a3e54cc816df3c63) · [VS Code](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522aperiodic%2522%252C%2522type%2522%253A%2522http%2522%252C%2522url%2522%253A%2522https%253A%252F%252Faperiodic.io%252Fmcp%2522%257D), or see [aperiodic.io/mcp](https://aperiodic.io/mcp) for Cursor, Claude Code and other clients.
 
 [![mcptry](https://mcptry.com/badge/io.aperiodic/market-data)](https://mcptry.com/servers/io.aperiodic/market-data)
 
