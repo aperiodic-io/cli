@@ -318,7 +318,8 @@ aperiodic stream ohlcv \
 
 - `data` is the server's row object, unchanged apart from whitespace (no re-escaping). On plans that include it, the latest row per symbol arrives first with `"snapshot":true`.
 - Granted and rejected channels, server warnings and reconnects go to **stderr**.
-- Dropped connections reconnect with capped exponential backoff and re-subscribe. This covers network drops, server restarts or drains (closes such as 1000, 1001, 1011, 1012), handshake 5xx and 75 s of silence. The backoff starts over only once a connection has delivered a row or stayed up for 60 s. Delivery is at most once: rows published while disconnected are not replayed.
+- Dropped connections reconnect with capped exponential backoff and re-subscribe. This covers network drops, server restarts or drains (closes such as 1000, 1001, 1011, 1012), handshake 5xx and 75 s of silence. The backoff starts over only once a connection has delivered a row or stayed up for 60 s.
+- **Replay.** On 1m and longer intervals, a reconnect asks for the bars since the newest one received, so rows published while disconnected arrive first, marked `"replay":true` (the server keeps 1 h of 1m to 30m bars, 3 h of 1h, the newest 4h bar and 48 h of 1d). `--since` replays from a time of your choosing on the first connect, too, and `--replay=false` turns the reconnect replay off. A summary of each replay goes to stderr, including bars the server does not hold, which you fill from the REST API. A row can arrive both replayed and live with the same key: overwrite it. If the server is too busy replaying (after it restarts), the subscribe is sent again after a short random pause; a replay cut short at the server's size cap is followed up from the next bar. Below 1m nothing is replayed.
 - It exits 1 with the server's message, without retrying, if:
   - the key is refused (401), the plan has no live access (403), or the handshake gets 426;
   - the connection limit is reached (429) on the first connect. After a session has been subscribed, a 429 is retried, because the server may still be counting the dropped socket;
@@ -332,8 +333,15 @@ aperiodic stream ohlcv \
 | `--exchange` | Exchange name | `binance-futures` |
 | `--interval` | Aggregation interval | `1m` |
 | `--symbols` | Comma-separated symbols | every symbol your plan allows |
-| `--count` | Stop after this many live rows (snapshot rows are printed but not counted) | no limit |
+| `--count` | Stop after this many live rows (snapshot and replayed rows are printed but not counted) | no limit |
 | `--duration` | Stop after this long, e.g. `90s`, `1h` | no limit |
+| `--since` | Replay the bars from this time on before the live rows: an RFC 3339 time (`2026-11-09T10:00:00Z`) or how long ago (`30m`). 1m and longer intervals | none |
+| `--replay` | After a reconnect, replay the bars missed while disconnected | `true` |
+
+**Catch up on the last 30 minutes, then keep streaming:**
+```bash
+aperiodic stream ohlcv --symbols perpetual-BTC-USDT:USDT --since 30m
+```
 
 **Take the next closed 1m bar and stop:**
 ```bash
