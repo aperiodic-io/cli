@@ -4,18 +4,18 @@ Command-line client for [Aperiodic.io](https://aperiodic.io) — institutional-g
 
 ## Install
 
-**Latest release: [v1.0.3](https://github.com/aperiodic-io/cli/releases/tag/v1.2.1)**
+**Latest release: [v1.3.0](https://github.com/aperiodic-io/cli/releases/tag/v1.3.0)**
 
 Download the binary for your platform:
 
 | Platform       | Architecture | Download |
 |----------------|-------------|---------|
-| Linux          | x86_64      | [aperiodic-linux-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.2.1/aperiodic-linux-amd64) |
-| Linux          | ARM64       | [aperiodic-linux-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.2.1/aperiodic-linux-arm64) |
-| macOS          | x86_64      | [aperiodic-darwin-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.2.1/aperiodic-darwin-amd64) |
-| macOS          | Apple Silicon | [aperiodic-darwin-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.2.1/aperiodic-darwin-arm64) |
-| Windows        | x86_64      | [aperiodic-windows-amd64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.2.1/aperiodic-windows-amd64.exe) |
-| Windows        | ARM64       | [aperiodic-windows-arm64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.2.1/aperiodic-windows-arm64.exe) |
+| Linux          | x86_64      | [aperiodic-linux-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.3.0/aperiodic-linux-amd64) |
+| Linux          | ARM64       | [aperiodic-linux-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.3.0/aperiodic-linux-arm64) |
+| macOS          | x86_64      | [aperiodic-darwin-amd64](https://github.com/aperiodic-io/cli/releases/download/v1.3.0/aperiodic-darwin-amd64) |
+| macOS          | Apple Silicon | [aperiodic-darwin-arm64](https://github.com/aperiodic-io/cli/releases/download/v1.3.0/aperiodic-darwin-arm64) |
+| Windows        | x86_64      | [aperiodic-windows-amd64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.3.0/aperiodic-windows-amd64.exe) |
+| Windows        | ARM64       | [aperiodic-windows-arm64.exe](https://github.com/aperiodic-io/cli/releases/download/v1.3.0/aperiodic-windows-arm64.exe) |
 
 Or use the install script (Linux/macOS):
 
@@ -66,6 +66,14 @@ Every command picks its key in this order:
 So [preview data](#preview-data) (`--preview`) needs no API key, and a saved key never takes over a preview request: even a revoked one can't break the free sample. The Python client uses the same order.
 
 [Raw data](#raw-data) needs a key on the Prime + Raw plan; `aperiodic raw coverage` and `aperiodic raw --preview` work without one.
+
+## Use it from an AI agent (MCP)
+
+Aperiodic also runs a remote MCP server at `https://aperiodic.io/mcp`, for Claude, ChatGPT, Cursor and other agents.
+
+Add it to [Claude](https://claude.ai/directory/aperiodic) · [ChatGPT](https://chatgpt.com/plugins/plugin_asdk_app_6af18fffeccc8191a3e54cc816df3c63) · [VS Code](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522aperiodic%2522%252C%2522type%2522%253A%2522http%2522%252C%2522url%2522%253A%2522https%253A%252F%252Faperiodic.io%252Fmcp%2522%257D), or see [aperiodic.io/mcp](https://aperiodic.io/mcp) for Cursor, Claude Code and other clients.
+
+[![mcptry](https://mcptry.com/badge/io.aperiodic/market-data)](https://mcptry.com/servers/io.aperiodic/market-data)
 
 ## Usage
 
