@@ -40,7 +40,7 @@ Sign in once per machine:
 aperiodic login
 ```
 
-It opens your browser, or, over SSH or on a machine without a display, prints a link to open on any device. Check the code there matches the one in your terminal and allow it. A free account works: it covers every metric for 2025 on BTC, ETH, SOL and 10 RWA perps.
+It opens your browser, or, over SSH or on a machine without a display, prints a link to open on any device. Check the code there matches the one in your terminal and allow it. A free account works: it covers every metric for Q3 2026 on BTC, ETH, SOL and 10 RWA perps, at 1h, 4h and 1d bars.
 
 The machine gets a key of its own, named after it and saved in `~/.config/aperiodic/credentials` (readable only by you; `%APPDATA%\aperiodic` on Windows, or `$APERIODIC_CONFIG_DIR`). The Python client reads the same file. See and revoke each machine's key at [aperiodic.io/home/api](https://aperiodic.io/home/api).
 
