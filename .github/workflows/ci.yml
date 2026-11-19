@@ -28,7 +28,10 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Celesto runs Linux only, so macOS and Windows stay on GitHub's
+        # runners and only push and PR runs use them. A dispatch is
+        # unravel-router's release gate, which must not wait in their queue.
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["celesto-memory"]' || '["celesto-memory", "macos-latest", "windows-latest"]') }}
     steps:
     - uses: actions/checkout@v6
     - name: Set up Go
@@ -68,7 +71,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: celesto-memory
     needs: test
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

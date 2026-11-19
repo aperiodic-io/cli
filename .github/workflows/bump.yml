@@ -16,7 +16,7 @@ on:
 jobs:
   bump:
     name: Create Tag
-    runs-on: ubuntu-latest
+    runs-on: celesto-memory
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
@@ -53,7 +53,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.os }}/${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: celesto-memory
     needs: bump
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -85,7 +85,7 @@ jobs:
 
   release:
     name: Publish Release
-    runs-on: ubuntu-latest
+    runs-on: celesto-memory
     needs: [bump, build]
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -140,7 +140,7 @@ jobs:
     if: >-
       always() &&
       contains(join(needs.*.result, ','), 'failure')
-    runs-on: ubuntu-latest
+    runs-on: celesto-memory
     steps:
       - name: Send PagerDuty alert
         uses: Entle/action-pagerduty-alert@1.0.5
